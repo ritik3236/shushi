@@ -87,6 +87,14 @@ function parseHdfcNarration(narration: string): NarrationInfo {
   return { channel: "OTHER" }
 }
 
+/** GPay rows carry a clean name: "Paid to X" / "Received from X" / "Self transfer to X". */
+function parseGpayNarration(narration: string): NarrationInfo {
+  const self = narration.match(/^Self transfer (?:to|from) (.+)$/i)
+  if (self) return { channel: "SELF_TRANSFER", counterparty: cleanName(self[1]) }
+  const m = narration.match(/^(?:Paid to|Received from) (.+)$/i)
+  return { channel: "UPI", counterparty: m ? cleanName(m[1]) : undefined }
+}
+
 /** Credit-card rows: "MERCHANT,CITY" details, plus payments/fees/cashback. */
 function parseCcNarration(narration: string): NarrationInfo {
   if (/^(MB|NEFT|UPI|IMPS)\s+PAYMENT\b/i.test(narration) || /PAYMENT RECEIVED/i.test(narration)) {
@@ -116,6 +124,8 @@ export function parseNarration(
       return parseHdfcNarration(text)
     case "AXIS_CC_XLSX":
       return parseCcNarration(text)
+    case "GPAY_STATEMENT_PDF":
+      return parseGpayNarration(text)
     default:
       return { channel: "OTHER" }
   }

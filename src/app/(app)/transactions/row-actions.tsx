@@ -39,26 +39,40 @@ import { formatDate } from "@/lib/format"
 import type { CategoryOption } from "@/lib/services/categories"
 import type { TransactionRow } from "@/lib/services/transactions"
 
-import { createRuleAction, setExcludedAction, setTagsAction, unlinkTransferAction } from "./actions"
+import {
+  assignPersonAction,
+  createRuleAction,
+  setExcludedAction,
+  setTagsAction,
+  unlinkTransferAction,
+} from "./actions"
 import { TagInput } from "./tag-input"
+
+const NONE = "__none__"
 
 export function RowActions({
   row,
   categoryOptions,
   tagSuggestions,
+  people,
 }: {
   row: TransactionRow
   categoryOptions: CategoryOption[]
   tagSuggestions: string[]
+  people: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [ruleOpen, setRuleOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tags, setTags] = useState<string[]>(row.tags)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [personSel, setPersonSel] = useState<string>(row.person?.id ?? NONE)
+  const [newPersonName, setNewPersonName] = useState("")
   const [, startMenuAction] = useTransition()
   const [ruleBusy, startRuleAction] = useTransition()
   const [tagsBusy, startTagsAction] = useTransition()
+  const [assignBusy, startAssignAction] = useTransition()
 
   // Rule form, prefilled from the row.
   const [pattern, setPattern] = useState(row.counterparty ?? row.narration.slice(0, 30))
@@ -93,6 +107,31 @@ export function RowActions({
       if (result.ok) {
         toast.success("Tags saved")
         setTagsOpen(false)
+        router.refresh()
+      } else {
+        toast.error(result.error)
+      }
+    })
+  }
+
+  function openAssign() {
+    setPersonSel(row.person?.id ?? NONE)
+    setNewPersonName("")
+    setAssignOpen(true)
+  }
+
+  function saveAssign() {
+    const newName = newPersonName.trim()
+    startAssignAction(async () => {
+      const result = await assignPersonAction({
+        transactionId: row.id,
+        ...(newName ? { newName } : { personId: personSel === NONE ? null : personSel }),
+      })
+      if (result.ok) {
+        toast.success(
+          newName ? `Assigned to ${newName}` : personSel === NONE ? "Unassigned" : "Assigned"
+        )
+        setAssignOpen(false)
         router.refresh()
       } else {
         toast.error(result.error)
@@ -142,6 +181,9 @@ export function RowActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem onSelect={() => setDetailsOpen(true)}>View details</DropdownMenuItem>
+          <DropdownMenuItem onSelect={openAssign}>
+            {row.person ? `Person: ${row.person.name}…` : "Assign to person…"}
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={openTags}>Tags…</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setRuleOpen(true)}>
             Always categorize like this…
@@ -248,6 +290,64 @@ export function RowActions({
             </Button>
             <Button size="sm" onClick={saveTags} disabled={tagsBusy}>
               {tagsBusy ? "Saving…" : "Save tags"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign to person</DialogTitle>
+            <DialogDescription>
+              Roll this transaction up under a person on the People page. Pick someone, or add a
+              new person.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {people.length ? (
+              <div className="space-y-1.5">
+                <Label htmlFor={`person-${row.id}`}>Person</Label>
+                <Select
+                  value={personSel}
+                  onValueChange={(v) => {
+                    setPersonSel(v)
+                    setNewPersonName("")
+                  }}
+                >
+                  <SelectTrigger id={`person-${row.id}`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>None (unassigned)</SelectItem>
+                    {people.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label htmlFor={`new-person-${row.id}`}>
+                {people.length ? "Or add a new person" : "New person"}
+              </Label>
+              <Input
+                id={`new-person-${row.id}`}
+                value={newPersonName}
+                onChange={(e) => setNewPersonName(e.target.value)}
+                placeholder="e.g. Ziya"
+                className="h-8"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAssignOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={saveAssign} disabled={assignBusy}>
+              {assignBusy ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -21,6 +21,8 @@ export type TransactionFilters = {
   q?: string
   /** Filter to rows carrying this tag. */
   tag?: string
+  /** Filter to rows assigned to this person. */
+  person?: string
   onlyUncategorized?: boolean
   hideTransfers?: boolean
   page?: number
@@ -49,6 +51,7 @@ export type TransactionRow = {
   transferGroupId: string | null
   excludeFromSpend: boolean
   tags: string[]
+  person: { id: string; name: string } | null
   notes: string | null
 }
 
@@ -81,6 +84,7 @@ export async function listTransactions(
   if (filters.onlyUncategorized) where.categoryId = null
   if (filters.hideTransfers) where.transferGroupId = null
   if (filters.tag) where.tags = { has: filters.tag }
+  if (filters.person) where.personId = filters.person
   if (filters.categoryId) {
     const children = await prisma.category.findMany({
       where: { parentId: filters.categoryId },
@@ -116,6 +120,7 @@ export async function listTransactions(
             parent: { select: { name: true } },
           },
         },
+        person: { select: { id: true, name: true } },
       },
     }),
   ])
@@ -146,6 +151,7 @@ export async function listTransactions(
       transferGroupId: row.transferGroupId,
       excludeFromSpend: row.excludeFromSpend,
       tags: row.tags,
+      person: row.person,
       notes: row.notes,
     })),
     total,

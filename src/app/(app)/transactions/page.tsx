@@ -1,20 +1,11 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { SearchX, Upload } from "lucide-react"
+import { SearchX, Upload, UserRound } from "lucide-react"
 
 import { Amount } from "@/components/finance/amount"
 import { EmptyState } from "@/components/finance/empty-state"
-import { TransferBadge } from "@/components/finance/transfer-badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   Tooltip,
   TooltipContent,
@@ -23,6 +14,7 @@ import {
 } from "@/components/ui/tooltip"
 import { requirePageUser } from "@/lib/auth"
 import { formatDayMonth } from "@/lib/format"
+import { listPersonOptions } from "@/lib/services/people"
 import { getTransactionFilterOptions } from "@/lib/services/transaction-filters"
 import {
   listTransactions,
@@ -53,6 +45,7 @@ function toFilters(sp: SearchParams): TransactionFilters {
     direction: direction === "DEBIT" || direction === "CREDIT" ? direction : undefined,
     q: first(sp.q),
     tag: first(sp.tag),
+    person: first(sp.person),
     onlyUncategorized: first(sp.uncategorized) === "1",
     hideTransfers: first(sp.hideTransfers) === "1",
     page: Number.isFinite(page) && page > 0 ? Math.floor(page) : 1,
@@ -71,57 +64,58 @@ function pageHref(sp: SearchParams, target: number): string {
 
 const countFormat = new Intl.NumberFormat("en-IN")
 
-function DetailsCell({ row }: { row: TransactionRow }) {
-  const primary =
-    row.counterparty ?? `${row.narration.slice(0, 40)}${row.narration.length > 40 ? "…" : ""}`
-  const hasSecondLine = Boolean(
-    row.counterparty || row.channel || row.transferKind || row.tags.length
-  )
-  return (
-    <div className="min-w-0">
-      <div className={cn("max-w-[380px] truncate", row.counterparty && "font-medium")}>
-        {primary}
-      </div>
-      {hasSecondLine ? (
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-          {row.counterparty ? (
-            <span className="text-muted-foreground max-w-[380px] truncate text-xs">
-              {row.narration}
-            </span>
-          ) : null}
-          {row.channel ? (
-            <span className="bg-muted text-muted-foreground shrink-0 rounded-sm px-1 py-px text-[10px]">
-              {row.channel}
-            </span>
-          ) : null}
-          {row.transferKind ? <TransferBadge kind={row.transferKind} /> : null}
-          {row.tags.map((tag) => (
-            <span
-              key={tag}
-              className="bg-muted text-muted-foreground shrink-0 rounded-sm px-1 py-px text-[10px]"
-            >
-              #{tag}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
+/** The merchant/person to lead a row with — the counterparty, else the narration. */
+function primaryName(row: TransactionRow): string {
+  return row.counterparty ?? row.narration
 }
 
-function AmountCell({ row }: { row: TransactionRow }) {
-  if (!row.excludeFromSpend) return <Amount value={row.amount} direction={row.direction} />
+function TxRow({ row, categoryOptions, tagNames, people }: {
+  row: TransactionRow
+  categoryOptions: React.ComponentProps<typeof CategoryCell>["options"]
+  tagNames: string[]
+  people: { id: string; name: string }[]
+}) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="opacity-60">
-            <Amount value={row.amount} direction={row.direction} />
+    <div className="group hover:bg-muted/50 odd:bg-muted/[0.18] flex items-center gap-2 px-3 py-1 text-[13px] transition-colors">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="min-w-0 truncate font-medium">{primaryName(row)}</span>
+        {row.person ? (
+          <span className="bg-primary/10 text-primary inline-flex shrink-0 items-center gap-0.5 rounded-sm px-1 py-px text-[10px] font-medium">
+            <UserRound className="size-2.5" />
+            {row.person.name}
           </span>
-        </TooltipTrigger>
-        <TooltipContent>Excluded from spend</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+        ) : null}
+        <CategoryCell
+          transactionId={row.id}
+          categoryId={row.category?.id ?? null}
+          options={categoryOptions}
+        />
+      </div>
+      <div className="w-24 shrink-0 text-right">
+        {row.excludeFromSpend ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="opacity-55">
+                  <Amount value={row.amount} direction={row.direction} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Excluded from spend</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : (
+          <Amount value={row.amount} direction={row.direction} />
+        )}
+      </div>
+      <div className="shrink-0 opacity-100 transition-opacity group-focus-within:opacity-100 lg:opacity-0 lg:group-hover:opacity-100">
+        <RowActions
+          row={row}
+          categoryOptions={categoryOptions}
+          tagSuggestions={tagNames}
+          people={people}
+        />
+      </div>
+    </div>
   )
 }
 
@@ -139,149 +133,144 @@ export default async function TransactionsPage({
       filters.direction ||
       filters.q ||
       filters.tag ||
+      filters.person ||
       filters.onlyUncategorized ||
       filters.hideTransfers
   )
 
   const user = await requirePageUser()
-  const [data, options] = await Promise.all([
+  const [data, options, people] = await Promise.all([
     listTransactions(user.id, filters),
     getTransactionFilterOptions(user.id),
+    listPersonOptions(user.id),
   ])
   const { months, categories: categoryOptions, accounts, tags } = options
   const tagNames = tags.map((t) => t.tag)
-  const currentYear = String(new Date().getFullYear())
+
+  // Group rows into consecutive days (rows arrive newest-first) and net each day.
+  const now = new Date()
+  const todayISO = now.toISOString().slice(0, 10)
+  const yesterdayISO = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10)
+  const currentYear = todayISO.slice(0, 4)
+  const dayHeading = (iso: string): string => {
+    if (iso === todayISO) return "Today"
+    if (iso === yesterdayISO) return "Yesterday"
+    const weekday = new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
+      weekday: "short",
+      timeZone: "UTC",
+    })
+    const year = iso.slice(0, 4)
+    return `${weekday}, ${formatDayMonth(iso)}${year !== currentYear ? ` ${year}` : ""}`
+  }
+  const groups: { date: string; rows: TransactionRow[]; net: number }[] = []
+  for (const row of data.rows) {
+    let group = groups[groups.length - 1]
+    if (!group || group.date !== row.date) {
+      group = { date: row.date, rows: [], net: 0 }
+      groups.push(group)
+    }
+    group.rows.push(row)
+    group.net += row.direction === "CREDIT" ? Number(row.amount) : -Number(row.amount)
+  }
 
   const noDataAtAll = data.total === 0 && !filtersActive
 
+  if (noDataAtAll) {
+    return (
+      <EmptyState
+        icon={Upload}
+        title="No transactions yet"
+        hint="Import a bank or credit card statement and every transaction will land here."
+        action={
+          <Button asChild size="sm">
+            <Link href="/imports">Import statements</Link>
+          </Button>
+        }
+      />
+    )
+  }
+
   return (
-    <>
-      {noDataAtAll ? (
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+      {/* Controls stay pinned while the list scrolls under them. */}
+      <div className="bg-background sticky top-0 z-20 border-b py-2">
+        <FilterRow months={months} accounts={accounts} categories={categoryOptions} tags={tags} />
+      </div>
+
+      {data.rows.length === 0 ? (
         <EmptyState
-          icon={Upload}
-          title="No transactions yet"
-          hint="Import a bank or credit card statement and every transaction will land here."
+          icon={SearchX}
+          title="No matching transactions"
+          hint="Nothing matches the current filters — loosen them or clear everything."
           action={
-            <Button asChild size="sm">
-              <Link href="/imports">Import statements</Link>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/transactions">Clear filters</Link>
             </Button>
           }
         />
       ) : (
-        <div className="space-y-3">
-          <FilterRow
-            months={months}
-            accounts={accounts}
-            categories={categoryOptions}
-            tags={tags}
-          />
-          {data.rows.length === 0 ? (
-            <EmptyState
-              icon={SearchX}
-              title="No matching transactions"
-              hint="Nothing matches the current filters — loosen them or clear everything."
-              action={
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/transactions">Clear filters</Link>
-                </Button>
-              }
-            />
-          ) : (
-            <Card className="gap-0 overflow-hidden py-0">
-              <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Details</TableHead>
-                    <TableHead className="hidden lg:table-cell">Account</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="w-8">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.rows.map((row) => {
-                    const year = row.date.slice(0, 4)
-                    return (
-                      <TableRow key={row.id} className="text-sm">
-                        <TableCell className="py-2">
-                          {formatDayMonth(row.date)}
-                          {year !== currentYear ? (
-                            <span className="text-muted-foreground text-xs"> {year}</span>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <DetailsCell row={row} />
-                        </TableCell>
-                        <TableCell className="text-muted-foreground hidden py-2 text-xs lg:table-cell">
-                          {row.account.name}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <CategoryCell
-                            transactionId={row.id}
-                            categoryId={row.category?.id ?? null}
-                            options={categoryOptions}
-                          />
-                        </TableCell>
-                        <TableCell className="py-2 text-right">
-                          <AmountCell row={row} />
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <RowActions
-                            row={row}
-                            categoryOptions={categoryOptions}
-                            tagSuggestions={tagNames}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-              </div>
-              <div className="flex items-center justify-between border-t px-4 py-2">
-                <p className="text-muted-foreground text-xs">
-                  {countFormat.format(data.total)} transaction{data.total === 1 ? "" : "s"} · page{" "}
-                  {data.page} of {data.pageCount}
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={cn(data.page <= 1 && "pointer-events-none opacity-50")}
-                  >
-                    <Link
-                      href={pageHref(sp, data.page - 1)}
-                      aria-disabled={data.page <= 1}
-                      tabIndex={data.page <= 1 ? -1 : undefined}
-                    >
-                      Prev
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={cn(data.page >= data.pageCount && "pointer-events-none opacity-50")}
-                  >
-                    <Link
-                      href={pageHref(sp, data.page + 1)}
-                      aria-disabled={data.page >= data.pageCount}
-                      tabIndex={data.page >= data.pageCount ? -1 : undefined}
-                    >
-                      Next
-                    </Link>
-                  </Button>
+        <Card className="gap-0 overflow-hidden py-0">
+          <div className="divide-border/70 divide-y">
+            {groups.map((group) => (
+              <section key={group.date}>
+                <div className="text-muted-foreground bg-muted/40 flex items-center justify-between px-3 py-1.5 text-[11px] font-medium tracking-wide">
+                  <span className="uppercase">{dayHeading(group.date)}</span>
+                  <Amount
+                    value={Math.abs(group.net)}
+                    direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
+                    className="text-[11px] opacity-80"
+                  />
                 </div>
-              </div>
-            </Card>
-          )}
-        </div>
+                {group.rows.map((row) => (
+                  <TxRow
+                    key={row.id}
+                    row={row}
+                    categoryOptions={categoryOptions}
+                    tagNames={tagNames}
+                    people={people}
+                  />
+                ))}
+              </section>
+            ))}
+          </div>
+          <div className="text-muted-foreground flex items-center justify-between border-t px-4 py-2 text-xs">
+            <span>
+              {countFormat.format(data.total)} transaction{data.total === 1 ? "" : "s"} · page{" "}
+              {data.page} of {data.pageCount}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className={cn(data.page <= 1 && "pointer-events-none opacity-50")}
+              >
+                <Link
+                  href={pageHref(sp, data.page - 1)}
+                  aria-disabled={data.page <= 1}
+                  tabIndex={data.page <= 1 ? -1 : undefined}
+                >
+                  Prev
+                </Link>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className={cn(data.page >= data.pageCount && "pointer-events-none opacity-50")}
+              >
+                <Link
+                  href={pageHref(sp, data.page + 1)}
+                  aria-disabled={data.page >= data.pageCount}
+                  tabIndex={data.page >= data.pageCount ? -1 : undefined}
+                >
+                  Next
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
-    </>
+    </div>
   )
 }

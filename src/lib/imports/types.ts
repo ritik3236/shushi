@@ -10,6 +10,7 @@ export type ImportFileType =
   | "AXIS_SAVINGS_CSV"
   | "HDFC_SAVINGS_XLS"
   | "AXIS_CC_XLSX"
+  | "GPAY_STATEMENT_PDF"
   | "PAYSLIP_PDF"
   | "CONTRACTOR_FEE_PDF"
 
@@ -50,7 +51,7 @@ export type ParsedAccount = {
 
 export type ParsedStatement = {
   kind: "STATEMENT"
-  fileType: "AXIS_SAVINGS_CSV" | "HDFC_SAVINGS_XLS" | "AXIS_CC_XLSX"
+  fileType: "AXIS_SAVINGS_CSV" | "HDFC_SAVINGS_XLS" | "AXIS_CC_XLSX" | "GPAY_STATEMENT_PDF"
   account: ParsedAccount
   /** Statement period when printed; otherwise min/max transaction date. */
   periodStart?: string

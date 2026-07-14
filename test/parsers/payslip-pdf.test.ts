@@ -128,7 +128,8 @@ describe("parsePayslipPdf — contractor fee statements", () => {
 describe("parsePayslipPdf — whole fixture set", () => {
   it("parses every fixture PDF with consistent money and dates", async () => {
     const files = (await readdir(fixturesDir)).filter((name) => name.endsWith(".pdf")).sort()
-    expect(files).toHaveLength(11)
+    // 12 FY2025-26 salary months + 2 contractor-fee statements.
+    expect(files).toHaveLength(14)
 
     for (const name of files) {
       const slip = await parseFixture(name)

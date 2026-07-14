@@ -50,7 +50,6 @@ export default async function PeoplePage() {
     suggestPeople(user.id, 12),
   ])
   const totals = peopleTotals(people)
-  const usedTags = [...new Set(people.flatMap((p) => p.tags))]
   const knownNames = new Set(people.map((p) => p.name.toLowerCase()))
   const freshSuggestions = suggestions.filter((s) => !knownNames.has(s.name.toLowerCase()))
 
@@ -60,15 +59,15 @@ export default async function PeoplePage() {
         <p className="text-muted-foreground text-xs">
           Net = given − received. Positive means they still owe you.
         </p>
-        <NewPersonButton suggestedTags={usedTags} />
+        <NewPersonButton />
       </div>
 
       {people.length === 0 ? (
         <EmptyState
           icon={HandCoins}
           title="No people yet"
-          hint="Add a person and give them a tag (e.g. “zia”), then tag their transactions with it — their given / received / balance shows up here."
-          action={<NewPersonButton suggestedTags={usedTags} />}
+          hint="Add a person, then open any transaction’s ⋯ menu → “Assign to person” to roll it up here. Their given / received / balance shows below."
+          action={<NewPersonButton />}
         />
       ) : (
         <>
@@ -91,31 +90,19 @@ export default async function PeoplePage() {
                 {people.map((person) => (
                   <div key={person.id} className="flex items-center gap-3 px-3 py-2.5">
                     <Link
-                      href={
-                        person.tags.length
-                          ? `/transactions?tag=${encodeURIComponent(person.tags[0])}`
-                          : "/transactions"
-                      }
+                      href={`/transactions?person=${encodeURIComponent(person.id)}`}
                       className="min-w-0 flex-1"
                     >
                       <p className="truncate text-sm font-medium">{person.name}</p>
                       <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1 text-[11px]">
-                        {person.tags.length ? (
-                          person.tags.map((t) => (
-                            <span key={t} className="bg-muted rounded px-1 py-px">
-                              #{t}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-warning">no tags — add one to track</span>
-                        )}
+                        {person.note ? <span>{person.note} · </span> : null}
                         {person.count > 0 ? (
                           <span>
-                            · {person.count} txns
+                            {person.count} txns
                             {person.lastDate ? ` · last ${formatDayMonth(person.lastDate)}` : ""}
                           </span>
                         ) : (
-                          <span>· no matching transactions yet</span>
+                          <span>no transactions assigned yet</span>
                         )}
                       </div>
                     </Link>

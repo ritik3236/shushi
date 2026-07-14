@@ -69,10 +69,11 @@ model Person {
   userId    String   @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
-  /// Tag labels that belong to this person (lowercased). A tag maps to at most
-  /// one person (enforced in the service) so transactions never double-count.
+  /// Legacy tag labels (no longer drives the ledger — transactions link to a
+  /// person directly via Transaction.personId). Kept for back-compat.
   tags      String[] @default([])
   note      String?
+  transactions Transaction[]
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -126,6 +127,7 @@ enum ImportFileType {
   AXIS_SAVINGS_CSV
   HDFC_SAVINGS_XLS
   AXIS_CC_XLSX
+  GPAY_STATEMENT_PDF
   PAYSLIP_PDF
   CONTRACTOR_FEE_PDF
 
@@ -230,6 +232,10 @@ model Transaction {
   balanceAfter Decimal?     @db.Decimal(14, 2)
   categoryId   String?
   category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Person this transaction is assigned to for the People ledger — a direct
+  /// link, set manually from the row. Deleting the person unassigns (SetNull).
+  personId     String?
+  person       Person?      @relation(fields: [personId], references: [id], onDelete: SetNull)
   /// Content hash for idempotent imports: sha256 of
   /// accountId|date|direction|amount|normalized narration|occurrence.
   dedupeKey    String
@@ -254,6 +260,7 @@ model Transaction {
   @@index([userId, date])
   @@index([accountId, date])
   @@index([userId, categoryId])
+  @@index([userId, personId])
   @@index([transferGroupId])
   // Trigram GIN indexes for fast case-insensitive substring search (the `q`
   // filter on the transactions list). A btree can't serve ILIKE '%term%'.

@@ -27,6 +27,7 @@ const FILE_TYPE_LABEL: Record<ImportListRow["fileType"], string> = {
   AXIS_SAVINGS_CSV: "CSV",
   HDFC_SAVINGS_XLS: "XLS",
   AXIS_CC_XLSX: "CC",
+  GPAY_STATEMENT_PDF: "GPay",
   PAYSLIP_PDF: "PDF",
   CONTRACTOR_FEE_PDF: "PDF",
 }

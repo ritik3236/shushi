@@ -14,6 +14,7 @@ import type {
   ParsedStatement,
 } from "@/lib/imports/types"
 import { invalidateFilterOptions } from "@/lib/services/filter-options-cache"
+import { correctedPeriodMonth } from "@/lib/imports/payslip-corrections"
 import { createPayslipFromParsed, matchPayslips } from "@/lib/services/payslips"
 import { rebuildSummaries } from "@/lib/services/summaries"
 import { detectTransfers } from "@/lib/transfers/detect"
@@ -183,7 +184,7 @@ export async function previewStatementFile(input: {
       payslip: {
         kind: parsed.payslipKind,
         employer: parsed.employer,
-        periodMonth: parsed.periodMonth,
+        periodMonth: correctedPeriodMonth(parsed),
         grossEarnings: parsed.grossEarnings,
         totalDeductions: parsed.totalDeductions,
         netPay: parsed.netPay,

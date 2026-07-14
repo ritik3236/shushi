@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "ImportFileType" ADD VALUE 'GPAY_STATEMENT_PDF';

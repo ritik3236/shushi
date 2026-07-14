@@ -3,30 +3,18 @@ import "server-only"
 import { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/prisma"
-import { invalidateFilterOptions } from "@/lib/services/filter-options-cache"
 import { NotFoundError, ValidationError } from "@/lib/errors"
 
-// People ledger ("khata"). You REGISTER a person and give them tag labels; any
-// transaction carrying one of those tags rolls up under them. That's how bank
-// name-variants merge — tag "PRANJAL KUSHWAHA SO K" and "PRANJAL K" both
-// "pranjal", register a person Pranjal with tag "pranjal". Each person's ledger
-// sums given (debits) vs received (credits); net > 0 means they still owe you.
+// People ledger ("khata"). You REGISTER a person, then assign transactions to
+// them directly from the transaction row. Each person's ledger sums given
+// (debits) vs received (credits); net > 0 means they still owe you.
 //
-// Model: people → tags → transactions. A tag maps to at most one person (we
-// strip it from others on assign) so a transaction is never counted twice.
-
-function cleanTags(tags: string[]): string[] {
-  return [
-    ...new Set(
-      tags.map((t) => t.trim().toLowerCase()).filter((t) => t.length > 0 && t.length <= 24)
-    ),
-  ].slice(0, 12)
-}
+// Model: people → transactions, a direct link (Transaction.personId). No tag
+// indirection — assignment is explicit, so nothing silently fails to roll up.
 
 export type PersonRow = {
   id: string
   name: string
-  tags: string[]
   note: string | null
   given: string
   received: string
@@ -35,13 +23,12 @@ export type PersonRow = {
   lastDate: string | null
 }
 
-/** Registered people with their tag-based ledger totals. */
+/** Registered people with their ledger totals from directly-assigned rows. */
 export async function listPeople(userId: string): Promise<PersonRow[]> {
   const rows = await prisma.$queryRaw<
     {
       id: string
       name: string
-      tags: string[]
       note: string | null
       given: number
       received: number
@@ -50,19 +37,15 @@ export async function listPeople(userId: string): Promise<PersonRow[]> {
     }[]
   >`
     SELECT
-      p.id, p.name, p.tags, p.note,
+      p.id, p.name, p.note,
       COALESCE(SUM(t.amount) FILTER (WHERE t.direction::text = 'DEBIT'), 0) AS given,
       COALESCE(SUM(t.amount) FILTER (WHERE t.direction::text = 'CREDIT'), 0) AS received,
       COUNT(t.id) AS cnt,
       MAX(t.date) AS last
     FROM "Person" p
-    LEFT JOIN "Transaction" t
-      ON t."userId" = p."userId"
-      AND array_length(p.tags, 1) > 0
-      AND t.tags && p.tags
-      AND t."transferGroupId" IS NULL
+    LEFT JOIN "Transaction" t ON t."personId" = p.id
     WHERE p."userId" = ${userId}::uuid
-    GROUP BY p.id, p.name, p.tags, p.note
+    GROUP BY p.id, p.name, p.note
     ORDER BY p.name ASC
   `
 
@@ -72,7 +55,6 @@ export async function listPeople(userId: string): Promise<PersonRow[]> {
     return {
       id: r.id,
       name: r.name,
-      tags: r.tags,
       note: r.note,
       given: given.toFixed(2),
       received: received.toFixed(2),
@@ -105,21 +87,28 @@ export function peopleTotals(rows: PersonRow[]): PeopleTotals {
   }
 }
 
+/** People as options for an assign control (id + name only). */
+export async function listPersonOptions(userId: string): Promise<{ id: string; name: string }[]> {
+  return prisma.person.findMany({
+    where: { userId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  })
+}
+
 // ── Person CRUD ──────────────────────────────────────────────────────────────
 
 export async function createPerson(input: {
   userId: string
   name: string
-  tags?: string[]
   note?: string
   /**
-   * When registering from a suggestion, the exact counterparty string — every
-   * transaction with this counterparty gets the person's first tag, so the
-   * ledger populates immediately (no manual tagging needed). Returns how many
-   * were tagged.
+   * When registering from a counterparty suggestion: assign every transaction
+   * with this exact counterparty to the new person, so the ledger populates
+   * immediately. Returns how many rows were assigned.
    */
   assignCounterparty?: string
-}): Promise<{ id: string; tagged: number }> {
+}): Promise<{ id: string; assigned: number }> {
   const name = input.name.trim()
   if (!name) throw new ValidationError("Name is required.")
   const existing = await prisma.person.findFirst({
@@ -128,35 +117,50 @@ export async function createPerson(input: {
   })
   if (existing) throw new ValidationError(`"${name}" already exists.`)
 
-  const tags = cleanTags(input.tags ?? [])
-  if (tags.length) await releaseTags(input.userId, tags)
-
   const person = await prisma.person.create({
-    data: { userId: input.userId, name, tags, note: input.note?.trim() || null },
+    data: { userId: input.userId, name, note: input.note?.trim() || null },
   })
 
-  let tagged = 0
-  if (input.assignCounterparty && tags.length) {
-    tagged = await tagCounterparty(input.userId, input.assignCounterparty, tags[0])
+  let assigned = 0
+  if (input.assignCounterparty) {
+    assigned = await assignCounterpartyToPerson(input.userId, input.assignCounterparty, person.id)
   }
-  return { id: person.id, tagged }
+  return { id: person.id, assigned }
 }
 
-/** Append a tag to every transaction with the given counterparty (idempotent). */
-async function tagCounterparty(
+/** Assign every transaction with the given counterparty to a person. */
+export async function assignCounterpartyToPerson(
   userId: string,
   counterparty: string,
-  tag: string
+  personId: string
 ): Promise<number> {
-  const result = await prisma.$executeRaw`
+  return prisma.$executeRaw`
     UPDATE "Transaction"
-    SET tags = array_append(tags, ${tag})
+    SET "personId" = ${personId}
     WHERE "userId" = ${userId}::uuid
       AND counterparty = ${counterparty}
-      AND NOT (${tag} = ANY(tags))
+      AND "personId" IS DISTINCT FROM ${personId}
   `
-  if (result > 0) invalidateFilterOptions(userId)
-  return result
+}
+
+/** Assign a single transaction to a person, or clear it (personId = null). */
+export async function assignTransactionToPerson(
+  userId: string,
+  transactionId: string,
+  personId: string | null
+): Promise<void> {
+  if (personId) {
+    const person = await prisma.person.findFirst({
+      where: { id: personId, userId },
+      select: { id: true },
+    })
+    if (!person) throw new NotFoundError("Person not found.")
+  }
+  const result = await prisma.transaction.updateMany({
+    where: { id: transactionId, userId },
+    data: { personId },
+  })
+  if (!result.count) throw new NotFoundError("Transaction not found.")
 }
 
 export async function updatePerson(input: {
@@ -179,41 +183,10 @@ export async function updatePerson(input: {
   await prisma.person.update({ where: { id: person.id }, data })
 }
 
-/** Replace a person's tags, taking each tag away from any other person. */
-export async function setPersonTags(
-  userId: string,
-  personId: string,
-  tags: string[]
-): Promise<void> {
-  const person = await prisma.person.findFirst({ where: { id: personId, userId } })
-  if (!person) throw new NotFoundError("Person not found.")
-  const clean = cleanTags(tags)
-  await releaseTags(userId, clean, personId)
-  await prisma.person.update({ where: { id: person.id }, data: { tags: clean } })
-}
-
 export async function deletePerson(userId: string, personId: string): Promise<void> {
+  // Transaction.personId is ON DELETE SET NULL — rows are unassigned, not lost.
   const result = await prisma.person.deleteMany({ where: { id: personId, userId } })
   if (!result.count) throw new NotFoundError("Person not found.")
-}
-
-/** Strip the given tags from every other person so a tag maps to one person. */
-async function releaseTags(userId: string, tags: string[], exceptPersonId?: string): Promise<void> {
-  if (!tags.length) return
-  const others = await prisma.person.findMany({
-    where: {
-      userId,
-      tags: { hasSome: tags },
-      ...(exceptPersonId ? { id: { not: exceptPersonId } } : {}),
-    },
-    select: { id: true, tags: true },
-  })
-  for (const other of others) {
-    await prisma.person.update({
-      where: { id: other.id },
-      data: { tags: other.tags.filter((t) => !tags.includes(t)) },
-    })
-  }
 }
 
 // ── Discovery: suggest people from frequent counterparties ───────────────────
@@ -229,8 +202,8 @@ export type CounterpartySuggestion = {
 const PEER_CHANNELS = ["UPI_P2A", "IMPS", "UPI", "NEFT", "FT"]
 
 /**
- * Top peer counterparties NOT yet covered by any registered person's tags —
- * quick candidates to register. Uses the raw counterparty string.
+ * Top peer counterparties not yet assigned to a person — quick candidates to
+ * register. Uses the raw counterparty string.
  */
 export async function suggestPeople(userId: string, limit = 20): Promise<CounterpartySuggestion[]> {
   const rows = await prisma.$queryRaw<
@@ -244,6 +217,7 @@ export async function suggestPeople(userId: string, limit = 20): Promise<Counter
     FROM "Transaction"
     WHERE "userId" = ${userId}::uuid
       AND counterparty IS NOT NULL
+      AND "personId" IS NULL
       AND "transferGroupId" IS NULL
       AND channel = ANY(${PEER_CHANNELS}::text[])
       AND upper(counterparty) NOT LIKE '%RITIK KUS%'

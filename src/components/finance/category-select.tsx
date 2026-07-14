@@ -25,6 +25,7 @@ export function CategorySelect({
   allowClear = true,
   className,
   disabled,
+  variant = "outline",
 }: {
   options: CategoryOption[]
   value: string | null
@@ -33,37 +34,63 @@ export function CategorySelect({
   allowClear?: boolean
   className?: string
   disabled?: boolean
+  /** "ghost" = a quiet dot + leaf label with no border, for dense list rows. */
+  variant?: "outline" | "ghost"
 }) {
   const [open, setOpen] = useState(false)
   const selected = options.find((option) => option.id === value)
+  const dotColor = selected?.color ? `var(--${selected.color})` : "var(--muted-foreground)"
+  // In a dense row the parent group colour is carried by the dot, so only the
+  // leaf name is shown ("Food & Dining › Delivery" → "Delivery").
+  const leaf = selected ? (selected.label.split("›").pop() ?? selected.label).trim() : ""
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className={cn("h-7 justify-between gap-1 px-2 text-xs font-normal", className)}
-        >
-          {selected ? (
-            <span className="inline-flex min-w-0 items-center gap-1.5">
-              <span
-                aria-hidden
-                className="size-2 shrink-0 rounded-full"
-                style={{
-                  background: selected.color ? `var(--${selected.color})` : "var(--muted-foreground)",
-                }}
-              />
-              <span className="truncate">{selected.label}</span>
-            </span>
-          ) : (
-            <span className="text-muted-foreground">{placeholder}</span>
-          )}
-          <ChevronsUpDown className="size-3 shrink-0 opacity-50" />
-        </Button>
+        {variant === "ghost" ? (
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            aria-label={selected ? `Category: ${selected.label}` : "Set category"}
+            disabled={disabled}
+            className={cn(
+              "hover:bg-muted focus-visible:ring-ring/50 inline-flex h-6 max-w-[9rem] items-center gap-1.5 rounded px-1.5 text-xs transition-colors focus-visible:ring-2 focus-visible:outline-none",
+              className
+            )}
+          >
+            {selected ? (
+              <>
+                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dotColor }} />
+                <span className="truncate">{leaf}</span>
+              </>
+            ) : (
+              <span className="text-muted-foreground/70 inline-flex items-center gap-1.5">
+                <span aria-hidden className="size-2 shrink-0 rounded-full border border-dashed border-current" />
+                <span>Uncategorized</span>
+              </span>
+            )}
+          </button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            role="combobox"
+            aria-expanded={open}
+            disabled={disabled}
+            className={cn("h-7 justify-between gap-1 px-2 text-xs font-normal", className)}
+          >
+            {selected ? (
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: dotColor }} />
+                <span className="truncate">{selected.label}</span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">{placeholder}</span>
+            )}
+            <ChevronsUpDown className="size-3 shrink-0 opacity-50" />
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 p-0">
         <Command>

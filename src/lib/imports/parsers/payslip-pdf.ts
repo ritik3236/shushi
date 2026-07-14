@@ -1,5 +1,4 @@
-import { extractText, getDocumentProxy } from "unpdf"
-
+import { extractPdfText } from "@/lib/imports/pdf"
 import { StatementParseError } from "@/lib/imports/types"
 import type { ParsedPayslip, PayslipLineItem } from "@/lib/imports/types"
 import { isoDate, normalizeWhitespace, parseAmount } from "@/lib/imports/values"
@@ -180,16 +179,14 @@ function parseContractorFee(text: string): ParsedPayslip {
   }
 }
 
-export async function parsePayslipPdf(buffer: Buffer): Promise<ParsedPayslip> {
-  let text: string
-  try {
-    const pdf = await getDocumentProxy(new Uint8Array(buffer))
-    text = (await extractText(pdf, { mergePages: true })).text
-  } catch {
-    throw new StatementParseError("Payslip PDF: file is not a readable PDF")
-  }
+/** Parse an already-extracted PDF text layer (the dispatcher extracts once). */
+export function parsePayslipText(text: string): ParsedPayslip {
   const flat = normalizeWhitespace(text)
   if (flat.includes("MONTHLY PROFESSIONAL FEE STATEMENT")) return parseContractorFee(flat)
   if (/PAYSLIP - [A-Za-z]+ \d{4}/.test(flat)) return parseSalary(flat)
   throw new StatementParseError("Payslip PDF: neither a BizDaddy payslip nor a contractor fee statement")
+}
+
+export async function parsePayslipPdf(buffer: Buffer): Promise<ParsedPayslip> {
+  return parsePayslipText(await extractPdfText(buffer))
 }

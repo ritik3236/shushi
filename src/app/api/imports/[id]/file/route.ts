@@ -10,6 +10,7 @@ const MIME_BY_TYPE: Record<ImportFileType, string> = {
   AXIS_SAVINGS_CSV: "text/csv",
   HDFC_SAVINGS_XLS: "application/vnd.ms-excel",
   AXIS_CC_XLSX: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  GPAY_STATEMENT_PDF: "application/pdf",
   PAYSLIP_PDF: "application/pdf",
   CONTRACTOR_FEE_PDF: "application/pdf",
 }

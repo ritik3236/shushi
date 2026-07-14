@@ -2,8 +2,10 @@ import { decrypt, isEncrypted } from "officecrypto-tool"
 
 import { parseAxisCcXlsx } from "@/lib/imports/parsers/axis-cc-xlsx"
 import { parseAxisSavingsCsv } from "@/lib/imports/parsers/axis-savings-csv"
+import { parseGpayStatement, isGpayStatement } from "@/lib/imports/parsers/gpay-statement-pdf"
 import { parseHdfcSavingsXls } from "@/lib/imports/parsers/hdfc-savings-xls"
-import { parsePayslipPdf } from "@/lib/imports/parsers/payslip-pdf"
+import { parsePayslipText } from "@/lib/imports/parsers/payslip-pdf"
+import { extractPdfText } from "@/lib/imports/pdf"
 import { StatementParseError, type ParseResult } from "@/lib/imports/types"
 
 /** Thrown when the file is password-protected and no/wrong password was given. */
@@ -28,7 +30,10 @@ export async function parseStatementFile(
   password?: string
 ): Promise<ParseResult> {
   if (isPdf(buffer)) {
-    return parsePayslipPdf(buffer)
+    // Extract once, then sniff: GPay statements and BizDaddy payslips are both PDFs.
+    const text = await extractPdfText(buffer)
+    if (isGpayStatement(text)) return parseGpayStatement(text)
+    return parsePayslipText(text)
   }
 
   if (isZip(buffer)) {

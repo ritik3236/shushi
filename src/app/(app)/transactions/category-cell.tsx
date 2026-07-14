@@ -47,11 +47,11 @@ export function CategoryCell({
 
   return (
     <CategorySelect
+      variant="ghost"
       options={options}
       value={value}
       onChange={handleChange}
       disabled={pending}
-      className="w-40"
     />
   )
 }

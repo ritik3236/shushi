@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import { requireUser } from "@/lib/auth"
 import { toErrorMessage } from "@/lib/errors"
+import { assignTransactionToPerson, createPerson } from "@/lib/services/people"
 import {
   createRuleFromTransaction,
   setTransactionCategory,
@@ -13,6 +14,34 @@ import {
 } from "@/lib/services/transactions"
 import { unlinkTransfer } from "@/lib/transfers/detect"
 import type { ActionResult } from "@/lib/actions"
+
+const assignPersonSchema = z.object({
+  transactionId: z.string().min(1),
+  /** Assign to this person, or null to clear. Ignored when newName is set. */
+  personId: z.string().nullable().optional(),
+  /** Create a new person with this name and assign the transaction to them. */
+  newName: z.string().trim().min(1).max(60).optional(),
+})
+
+/** Assign a transaction to a person — existing, newly-created, or none. */
+export async function assignPersonAction(
+  input: z.input<typeof assignPersonSchema>
+): Promise<ActionResult<{ personId: string | null }>> {
+  try {
+    const user = await requireUser()
+    const { transactionId, personId, newName } = assignPersonSchema.parse(input)
+    let target = personId ?? null
+    if (newName) {
+      const { id } = await createPerson({ userId: user.id, name: newName })
+      target = id
+    }
+    await assignTransactionToPerson(user.id, transactionId, target)
+    revalidatePath("/", "layout")
+    return { ok: true, data: { personId: target } }
+  } catch (error) {
+    return { ok: false, error: toErrorMessage(error) }
+  }
+}
 
 export async function setCategoryAction(
   transactionId: string,

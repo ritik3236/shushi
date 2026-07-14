@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/prisma"
 import { rebuildSummaries } from "@/lib/services/summaries"
+import { correctedPeriodMonth } from "@/lib/imports/payslip-corrections"
 import type { ParsedPayslip } from "@/lib/imports/types"
 import { NotFoundError, ValidationError } from "@/lib/errors"
 
@@ -53,7 +54,7 @@ export async function createPayslipFromParsed(input: {
       userId,
       kind: parsed.payslipKind,
       employer: parsed.employer,
-      periodMonth: new Date(parsed.periodMonth),
+      periodMonth: new Date(correctedPeriodMonth(parsed)),
       grossEarnings: parsed.grossEarnings,
       totalDeductions: parsed.totalDeductions,
       netPay: parsed.netPay,

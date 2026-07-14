@@ -23,23 +23,20 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-import { createPersonAction, deletePersonAction, setPersonTagsAction, updatePersonAction } from "./actions"
-import { TagChips } from "./tag-chips"
+import { createPersonAction, deletePersonAction, updatePersonAction } from "./actions"
 
-type PersonForm = { id?: string; name: string; tags: string[]; note: string }
+type PersonForm = { id?: string; name: string; note: string }
 
 function PersonDialog({
   open,
   onOpenChange,
   initial,
-  suggestedTags,
   assignCounterparty,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
-  initial?: { id: string; name: string; tags: string[]; note: string | null }
-  suggestedTags?: string[]
-  /** When registering from a suggestion — auto-tag this counterparty's rows. */
+  initial?: { id: string; name: string; note: string | null }
+  /** When registering from a suggestion — assign this counterparty's rows. */
   assignCounterparty?: string
 }) {
   const router = useRouter()
@@ -48,7 +45,6 @@ function PersonDialog({
   const [form, setForm] = useState<PersonForm>({
     id: initial?.id || undefined,
     name: initial?.name ?? "",
-    tags: initial?.tags ?? [],
     note: initial?.note ?? "",
   })
   const [pending, start] = useTransition()
@@ -60,28 +56,24 @@ function PersonDialog({
         return
       }
       if (editing && form.id) {
-        const [a, b] = await Promise.all([
-          updatePersonAction(form.id, { name: form.name, note: form.note }),
-          setPersonTagsAction(form.id, form.tags),
-        ])
-        if (a.ok && b.ok) {
+        const res = await updatePersonAction(form.id, { name: form.name, note: form.note })
+        if (res.ok) {
           toast.success("Saved")
           onOpenChange(false)
           router.refresh()
         } else {
-          toast.error((!a.ok && a.error) || (!b.ok && b.error) || "Couldn't save")
+          toast.error(res.error)
         }
       } else {
         const res = await createPersonAction({
           name: form.name,
-          tags: form.tags,
           note: form.note,
           assignCounterparty,
         })
         if (res.ok) {
           toast.success(
-            res.data.tagged > 0
-              ? `${form.name.trim()} added · ${res.data.tagged} transactions tagged`
+            res.data.assigned > 0
+              ? `${form.name.trim()} added · ${res.data.assigned} transactions assigned`
               : `${form.name.trim()} added`
           )
           onOpenChange(false)
@@ -98,8 +90,9 @@ function PersonDialog({
         <DialogHeader>
           <DialogTitle>{editing ? "Edit person" : "New person"}</DialogTitle>
           <DialogDescription>
-            Give them a name and the tag(s) you&apos;ll put on their transactions. Any transaction
-            with one of these tags rolls up under this person.
+            {assignCounterparty
+              ? `Every transaction from “${assignCounterparty}” will be assigned to this person.`
+              : "Register a person, then assign their transactions from the transaction row."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -115,31 +108,6 @@ function PersonDialog({
               className="h-8"
               autoFocus
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Tags</Label>
-            <TagChips
-              value={form.tags}
-              onChange={(tags) => setForm((f) => ({ ...f, tags }))}
-              placeholder="e.g. zia"
-            />
-            {suggestedTags?.length ? (
-              <div className="flex flex-wrap gap-1 pt-0.5">
-                {suggestedTags
-                  .filter((t) => !form.tags.includes(t))
-                  .slice(0, 6)
-                  .map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, tags: [...f.tags, t] }))}
-                      className="text-muted-foreground hover:bg-muted rounded border border-dashed px-1.5 py-0.5 text-[11px]"
-                    >
-                      + {t}
-                    </button>
-                  ))}
-              </div>
-            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="person-note" className="text-xs">
@@ -170,15 +138,13 @@ function PersonDialog({
 
 /** "New person" button — also used to prefill from a counterparty suggestion. */
 export function NewPersonButton({
-  suggestedTags,
   prefill,
   assignCounterparty,
   variant = "default",
   size = "sm",
   children,
 }: {
-  suggestedTags?: string[]
-  prefill?: { name: string; tags: string[] }
+  prefill?: { name: string }
   assignCounterparty?: string
   variant?: "default" | "outline" | "ghost"
   size?: "sm" | "xs"
@@ -198,10 +164,7 @@ export function NewPersonButton({
         <PersonDialog
           open={open}
           onOpenChange={setOpen}
-          initial={
-            prefill ? { id: "", name: prefill.name, tags: prefill.tags, note: null } : undefined
-          }
-          suggestedTags={suggestedTags}
+          initial={prefill ? { id: "", name: prefill.name, note: null } : undefined}
           assignCounterparty={assignCounterparty}
         />
       ) : null}
@@ -212,7 +175,7 @@ export function NewPersonButton({
 export function PersonRowActions({
   person,
 }: {
-  person: { id: string; name: string; tags: string[]; note: string | null }
+  person: { id: string; name: string; note: string | null }
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
@@ -229,7 +192,7 @@ export function PersonRowActions({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => setEditOpen(true)}>
-            <Pencil /> Edit &amp; tags
+            <Pencil /> Edit
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onSelect={() => setConfirmOpen(true)}>
             <Trash2 /> Delete
@@ -241,7 +204,7 @@ export function PersonRowActions({
         <PersonDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          initial={{ id: person.id, name: person.name, tags: person.tags, note: person.note }}
+          initial={{ id: person.id, name: person.name, note: person.note }}
         />
       ) : null}
 
@@ -250,8 +213,8 @@ export function PersonRowActions({
           <DialogHeader>
             <DialogTitle>Delete {person.name}?</DialogTitle>
             <DialogDescription>
-              Removes this person. Their transactions and tags stay — only the ledger grouping is
-              removed.
+              Removes this person. Their transactions stay — they&apos;re just unassigned from the
+              ledger.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -287,15 +250,8 @@ export function PersonRowActions({
 
 /** A counterparty suggestion → opens the new-person dialog prefilled. */
 export function SuggestionAdd({ name }: { name: string }) {
-  // Suggest the first name word as the starting tag (e.g. "ZIYA UL ALAM" → "ziya").
-  const suggestedTag = name.trim().toLowerCase().split(/\s+/)[0] ?? ""
   return (
-    <NewPersonButton
-      prefill={{ name, tags: suggestedTag ? [suggestedTag] : [] }}
-      assignCounterparty={name}
-      variant="ghost"
-      size="xs"
-    >
+    <NewPersonButton prefill={{ name }} assignCounterparty={name} variant="ghost" size="xs">
       <UserPlus /> Add
     </NewPersonButton>
   )
