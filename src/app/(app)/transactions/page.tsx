@@ -1,10 +1,12 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { DateTime } from "luxon"
 import { SearchX, Upload, UserRound } from "lucide-react"
 
 import { Amount } from "@/components/finance/amount"
 import { EmptyState } from "@/components/finance/empty-state"
 import { Button } from "@/components/ui/button"
+import { APP_TIMEZONE } from "@/lib/constants"
 import {
   Tooltip,
   TooltipContent,
@@ -155,9 +157,11 @@ export default async function TransactionsPage({
   const tagNames = tags.map((t) => t.tag)
 
   // Group rows into consecutive days (rows arrive newest-first) and net each day.
-  const now = new Date()
-  const todayISO = now.toISOString().slice(0, 10)
-  const yesterdayISO = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10)
+  // "Today"/"Yesterday" are relative to the user's timezone (IST), not the
+  // server's UTC clock — otherwise before ~5:30am IST the labels lag a day.
+  const nowLocal = DateTime.now().setZone(APP_TIMEZONE)
+  const todayISO = nowLocal.toISODate() ?? ""
+  const yesterdayISO = nowLocal.minus({ days: 1 }).toISODate() ?? ""
   const currentYear = todayISO.slice(0, 4)
   const dayHeading = (iso: string): string => {
     if (iso === todayISO) return "Today"
