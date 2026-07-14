@@ -1,0 +1,429 @@
+// Shushi — personal expense tracker
+//
+// Identity lives in the `neon_auth` schema, which is owned and managed by Neon
+// Auth (Better Auth). We map its `user` table here (see model User) but DO NOT
+// manage it with Prisma migrations — Neon Auth creates and maintains it. The
+// `multiSchema` setup lets our `public` tables FK across to it.
+//
+// Money is always Decimal(14,2) INR and travels as decimal strings across the
+// wire — never JS floats.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  schemas    = ["public", "neon_auth"]
+  // pg_trgm powers the GIN trigram indexes for fast ILIKE search on
+  // transaction narration/counterparty (see model Transaction).
+  extensions = [pg_trgm]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity (owned by Neon Auth — mapped, never migrated by Prisma)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// The user, owned by Neon Auth (Better Auth) in the `neon_auth` schema.
+/// Read-only from the app's perspective — rows are created by Neon Auth on
+/// sign-up. NOTE: managed by Neon Auth; never created/altered by Prisma migrations.
+model User {
+  id            String    @id @db.Uuid
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  role          String?
+  banned        Boolean?
+  banReason     String?
+  banExpires    DateTime? @db.Timestamptz(3)
+  createdAt     DateTime  @db.Timestamptz(3)
+  updatedAt     DateTime  @db.Timestamptz(3)
+
+  accounts          Account[]
+  imports           StatementImport[]
+  transactions      Transaction[]
+  categories        Category[]
+  rules             CategoryRule[]
+  payslips          Payslip[]
+  monthlySummaries  MonthlySummary[]
+  categorySummaries CategorySummary[]
+  people            Person[]
+
+  @@map("user")
+  @@schema("neon_auth")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// People (the ledger / khata)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A person you track money with (friend, family, whoever). You register them
+/// and give them one or more tag labels; any transaction carrying one of those
+/// tags rolls up under this person. This is how name variants ("PRANJAL
+/// KUSHWAHA SO K" / "PRANJAL K") get merged — tag them all "pranjal". The
+/// per-person ledger sums given (debits) vs received (credits).
+model Person {
+  id        String   @id @default(cuid())
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  /// Tag labels that belong to this person (lowercased). A tag maps to at most
+  /// one person (enforced in the service) so transactions never double-count.
+  tags      String[] @default([])
+  note      String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Accounts
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AccountType {
+  SAVINGS
+  CREDIT_CARD
+
+  @@schema("public")
+}
+
+/// A bank account or credit card the user imports statements for. Multi-bank by
+/// construction: one row per account, keyed by (userId, accountNumber).
+model Account {
+  id            String      @id @default(cuid())
+  userId        String      @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  bank          String
+  type          AccountType
+  /// Full number when the statement shows it, otherwise the masked form
+  /// exactly as printed (e.g. "XXXXXXXX2791") — stable across statements.
+  accountNumber String
+  ifsc          String?
+  creditLimit   Decimal?    @db.Decimal(14, 2)
+  currency      String      @default("INR")
+  createdAt     DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime    @updatedAt @db.Timestamptz(3)
+
+  transactions Transaction[]
+  imports      StatementImport[]
+  payslips     Payslip[]
+
+  @@unique([userId, accountNumber])
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Statement imports
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ImportFileType {
+  AXIS_SAVINGS_CSV
+  HDFC_SAVINGS_XLS
+  AXIS_CC_XLSX
+  PAYSLIP_PDF
+  CONTRACTOR_FEE_PDF
+
+  @@schema("public")
+}
+
+enum ImportStatus {
+  PENDING
+  COMMITTED
+  FAILED
+
+  @@schema("public")
+}
+
+/// One uploaded statement file. Created at preview time with the parsed rows in
+/// `payload`; committing inserts transactions and flips the status. fileHash
+/// lets the UI warn on exact re-uploads (row-level dedupe still protects
+/// against overlapping periods in differently-hashed files).
+model StatementImport {
+  id             String         @id @default(cuid())
+  userId         String         @db.Uuid
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId      String?
+  account        Account?       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fileName       String
+  fileType       ImportFileType
+  fileHash       String
+  /// The original uploaded file, exactly as received (still encrypted if it
+  /// was) — downloadable from the imports page. Statements are tiny; bytea is
+  /// plenty at personal scale.
+  fileData       Bytes?
+  fileSize       Int?
+  periodStart    DateTime?      @db.Date
+  periodEnd      DateTime?      @db.Date
+  /// Statement summary parsed from the file (CC: opening balance, total due,
+  /// min due, due date, credit limit; savings: header metadata).
+  statementMeta  Json?
+  /// Normalized parsed rows, held between preview and commit; cleared on commit.
+  payload        Json?
+  rowCount       Int            @default(0)
+  importedCount  Int            @default(0)
+  duplicateCount Int            @default(0)
+  status         ImportStatus   @default(PENDING)
+  error          String?
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  committedAt    DateTime?      @db.Timestamptz(3)
+
+  transactions Transaction[]
+  payslips     Payslip[]
+
+  @@index([userId, fileHash])
+  @@index([userId, status])
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transactions
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TxDirection {
+  DEBIT
+  CREDIT
+
+  @@schema("public")
+}
+
+enum TxSource {
+  IMPORT
+  MANUAL
+
+  @@schema("public")
+}
+
+enum TransferKind {
+  /// Money moved between the user's own tracked accounts.
+  SELF_TRANSFER
+  /// A credit-card bill payment (bank debit ↔ card credit).
+  CC_PAYMENT
+
+  @@schema("public")
+}
+
+model Transaction {
+  id           String       @id @default(cuid())
+  userId       String       @db.Uuid
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  importId     String?
+  import       StatementImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  date         DateTime     @db.Date
+  valueDate    DateTime?    @db.Date
+  narration    String
+  refNo        String?
+  /// Payment rail parsed from the narration: UPI_P2M, UPI_P2A, IMPS, NEFT,
+  /// ACH, POS, INTEREST, FEE, CC, OTHER.
+  channel      String?
+  /// Merchant / person extracted from the narration.
+  counterparty String?
+  direction    TxDirection
+  amount       Decimal      @db.Decimal(14, 2)
+  balanceAfter Decimal?     @db.Decimal(14, 2)
+  categoryId   String?
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  /// Content hash for idempotent imports: sha256 of
+  /// accountId|date|direction|amount|normalized narration|occurrence.
+  dedupeKey    String
+  /// 1-based index among identical rows (same account+date+amount+direction+
+  /// narration) within one statement — real duplicates like two identical
+  /// same-day payments import correctly, while re-imports still dedupe.
+  occurrence   Int          @default(1)
+  /// Both legs of a detected transfer share a group id.
+  transferGroupId String?
+  transferKind    TransferKind?
+  /// Transfers and CC bill payments are excluded from spend analytics.
+  excludeFromSpend Boolean  @default(false)
+  /// Free-form user labels (e.g. a person's short name "zia"). Lowercased on
+  /// write; the People ledger and tag filter read them.
+  tags         String[]     @default([])
+  notes        String?
+  source       TxSource     @default(IMPORT)
+  createdAt    DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(3)
+
+  @@unique([accountId, dedupeKey])
+  @@index([userId, date])
+  @@index([accountId, date])
+  @@index([userId, categoryId])
+  @@index([transferGroupId])
+  // Trigram GIN indexes for fast case-insensitive substring search (the `q`
+  // filter on the transactions list). A btree can't serve ILIKE '%term%'.
+  @@index([narration(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([counterparty(ops: raw("gin_trgm_ops"))], type: Gin)
+  // Array-contains lookups for the tag filter / People ledger.
+  @@index([tags], type: Gin)
+  @@index([userId, counterparty])
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Categories & rules
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CategoryKind {
+  EXPENSE
+  INCOME
+  TRANSFER
+
+  @@schema("public")
+}
+
+/// Two-level category tree (category → subcategories via parentId). Seeded
+/// system rows have userId null and isSystem true; user-created rows carry the
+/// owner. `color` is a chart token key ("chart-1"…"chart-8"), never a hex.
+model Category {
+  id       String       @id @default(cuid())
+  userId   String?      @db.Uuid
+  user     User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name     String
+  kind     CategoryKind @default(EXPENSE)
+  parentId String?
+  parent   Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children Category[]   @relation("CategoryTree")
+  icon     String?
+  color    String?
+  isSystem Boolean      @default(false)
+
+  transactions Transaction[]
+  rules        CategoryRule[]
+
+  @@unique([name, parentId])
+  @@schema("public")
+}
+
+enum RuleField {
+  NARRATION
+  COUNTERPARTY
+
+  @@schema("public")
+}
+
+enum RuleMatch {
+  CONTAINS
+  REGEX
+
+  @@schema("public")
+}
+
+/// Auto-categorization rule, applied at import time in priority order (lower
+/// number wins first). System seeds cover the common Indian merchants; user
+/// rules are created from the UI ("always categorize X as Y").
+model CategoryRule {
+  id         String      @id @default(cuid())
+  userId     String?     @db.Uuid
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pattern    String
+  field      RuleField   @default(NARRATION)
+  match      RuleMatch   @default(CONTAINS)
+  /// Restrict to a direction, or null for both.
+  direction  TxDirection?
+  categoryId String
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  priority   Int         @default(100)
+  isSystem   Boolean     @default(false)
+  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([userId])
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payslips
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PayslipKind {
+  SALARY
+  CONTRACTOR_FEE
+
+  @@schema("public")
+}
+
+/// A parsed payslip or contractor fee statement. Line items keep the full
+/// earnings/deductions breakdown; matchedTransactionId links the payout to the
+/// actual bank credit once found.
+model Payslip {
+  id                   String      @id @default(cuid())
+  userId               String      @db.Uuid
+  user                 User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind                 PayslipKind
+  employer             String
+  /// First day of the statement month.
+  periodMonth          DateTime    @db.Date
+  grossEarnings        Decimal     @db.Decimal(14, 2)
+  totalDeductions      Decimal     @db.Decimal(14, 2)
+  netPay               Decimal     @db.Decimal(14, 2)
+  currency             String      @default("INR")
+  /// [{ label, amount }] as printed on the slip.
+  earnings             Json
+  deductions           Json
+  /// Leave details, payable days, designation, contractor id, …
+  meta                 Json?
+  fileName             String
+  fileHash             String
+  importId             String?
+  import               StatementImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  /// Account the slip says the payout goes to (matched by account number).
+  bankAccountId        String?
+  bankAccount          Account?    @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  /// The bank credit transaction this payout matched to.
+  matchedTransactionId String?     @unique
+  createdAt            DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, fileHash])
+  @@index([userId, periodMonth])
+  @@schema("public")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Precomputed rollups (materialized on write, read cheaply)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Dashboards read from these instead of aggregating the whole Transaction table
+// on every page load. They are rebuilt from transactions whenever the underlying
+// data changes (import commit, category edit, exclude toggle, transfer link) —
+// see src/lib/services/summaries.ts. Month is the base grain; year and financial
+// year (Apr–Mar) views sum the relevant month rows. Both mirror the analytics
+// definitions: excludeFromSpend rows and TRANSFER-kind categories are left out;
+// uncategorized rows are counted.
+
+/// One row per (user, month) — the KPI/trend rollup.
+model MonthlySummary {
+  userId   String @db.Uuid
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 'YYYY-MM'
+  month    String
+  income   Decimal @db.Decimal(14, 2)
+  spend    Decimal @db.Decimal(14, 2)
+  net      Decimal @db.Decimal(14, 2)
+  txnCount Int
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@id([userId, month])
+  @@schema("public")
+}
+
+/// One row per (user, month, top-level category, direction) — the breakdown
+/// rollup. topCategoryId is the top-level parent id (null = uncategorized).
+model CategorySummary {
+  id            String      @id @default(cuid())
+  userId        String      @db.Uuid
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  month         String
+  topCategoryId String?
+  direction     TxDirection
+  total         Decimal     @db.Decimal(14, 2)
+  count         Int
+
+  @@index([userId, month])
+  @@index([userId, topCategoryId])
+  @@schema("public")
+}
