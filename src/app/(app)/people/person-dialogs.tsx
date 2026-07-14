@@ -22,20 +22,24 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { formatINR } from "@/lib/format"
 
 import { createPersonAction, deletePersonAction, updatePersonAction } from "./actions"
 
-type PersonForm = { id?: string; name: string; note: string }
+type PersonForm = { id?: string; name: string; note: string; openingBalance: string }
 
 function PersonDialog({
   open,
   onOpenChange,
   initial,
+  capturedNet,
   assignCounterparty,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
-  initial?: { id: string; name: string; note: string | null }
+  initial?: { id: string; name: string; note: string | null; openingBalance: string }
+  /** given − received for an existing person; drives the live resulting-net hint. */
+  capturedNet?: number
   /** When registering from a suggestion — assign this counterparty's rows. */
   assignCounterparty?: string
 }) {
@@ -46,8 +50,18 @@ function PersonDialog({
     id: initial?.id || undefined,
     name: initial?.name ?? "",
     note: initial?.note ?? "",
+    // Seed blank when zero so the "0" placeholder shows; strip the ".00" tail.
+    openingBalance:
+      initial && Number(initial.openingBalance) !== 0
+        ? String(Number(initial.openingBalance))
+        : "",
   })
   const [pending, start] = useTransition()
+
+  const openingNum = Number(form.openingBalance || "0")
+  const openingValid = form.openingBalance.trim() === "" || Number.isFinite(openingNum)
+  const resultingNet =
+    capturedNet !== undefined && openingValid ? capturedNet + openingNum : null
 
   const submit = () =>
     start(async () => {
@@ -55,8 +69,17 @@ function PersonDialog({
         toast.error("Give this person a name.")
         return
       }
+      if (!openingValid) {
+        toast.error("Opening balance must be a number.")
+        return
+      }
+      const openingBalance = form.openingBalance.trim() === "" ? "0" : form.openingBalance.trim()
       if (editing && form.id) {
-        const res = await updatePersonAction(form.id, { name: form.name, note: form.note })
+        const res = await updatePersonAction(form.id, {
+          name: form.name,
+          note: form.note,
+          openingBalance,
+        })
         if (res.ok) {
           toast.success("Saved")
           onOpenChange(false)
@@ -68,6 +91,7 @@ function PersonDialog({
         const res = await createPersonAction({
           name: form.name,
           note: form.note,
+          openingBalance,
           assignCounterparty,
         })
         if (res.ok) {
@@ -121,6 +145,35 @@ function PersonDialog({
               className="h-8"
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="person-opening" className="text-xs">
+              Opening balance
+            </Label>
+            <Input
+              id="person-opening"
+              inputMode="text"
+              value={form.openingBalance}
+              onChange={(e) => setForm((f) => ({ ...f, openingBalance: e.target.value }))}
+              placeholder="0"
+              className="h-8"
+            />
+            <p className="text-muted-foreground text-[11px] leading-relaxed">
+              Carried in from before your records — covers gaps from missing old statements.
+              Positive = they owed you; negative = you owed them.
+              {resultingNet !== null ? (
+                <>
+                  {" "}
+                  Net becomes{" "}
+                  <span className="text-foreground font-medium">
+                    {resultingNet === 0
+                      ? "settled"
+                      : `${formatINR(Math.abs(resultingNet))} ${resultingNet > 0 ? "owed to you" : "you owe"}`}
+                  </span>
+                  .
+                </>
+              ) : null}
+            </p>
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={pending}>
@@ -164,7 +217,7 @@ export function NewPersonButton({
         <PersonDialog
           open={open}
           onOpenChange={setOpen}
-          initial={prefill ? { id: "", name: prefill.name, note: null } : undefined}
+          initial={prefill ? { id: "", name: prefill.name, note: null, openingBalance: "0" } : undefined}
           assignCounterparty={assignCounterparty}
         />
       ) : null}
@@ -175,7 +228,14 @@ export function NewPersonButton({
 export function PersonRowActions({
   person,
 }: {
-  person: { id: string; name: string; note: string | null }
+  person: {
+    id: string
+    name: string
+    note: string | null
+    openingBalance: string
+    given: string
+    received: string
+  }
 }) {
   const router = useRouter()
   const [editOpen, setEditOpen] = useState(false)
@@ -204,7 +264,13 @@ export function PersonRowActions({
         <PersonDialog
           open={editOpen}
           onOpenChange={setEditOpen}
-          initial={{ id: person.id, name: person.name, note: person.note }}
+          initial={{
+            id: person.id,
+            name: person.name,
+            note: person.note,
+            openingBalance: person.openingBalance,
+          }}
+          capturedNet={Number(person.given) - Number(person.received)}
         />
       ) : null}
 

@@ -16,8 +16,11 @@ export type PersonRow = {
   id: string
   name: string
   note: string | null
+  /** Carried-forward balance from before the captured history (signed). */
+  openingBalance: string
   given: string
   received: string
+  /** openingBalance + given − received. Positive = they owe you. */
   net: string
   count: number
   lastDate: string | null
@@ -30,6 +33,7 @@ export async function listPeople(userId: string): Promise<PersonRow[]> {
       id: string
       name: string
       note: string | null
+      opening: number
       given: number
       received: number
       cnt: bigint
@@ -37,7 +41,7 @@ export async function listPeople(userId: string): Promise<PersonRow[]> {
     }[]
   >`
     SELECT
-      p.id, p.name, p.note,
+      p.id, p.name, p.note, p."openingBalance" AS opening,
       COALESCE(SUM(t.amount) FILTER (WHERE t.direction::text = 'DEBIT'), 0) AS given,
       COALESCE(SUM(t.amount) FILTER (WHERE t.direction::text = 'CREDIT'), 0) AS received,
       COUNT(t.id) AS cnt,
@@ -45,20 +49,22 @@ export async function listPeople(userId: string): Promise<PersonRow[]> {
     FROM "Person" p
     LEFT JOIN "Transaction" t ON t."personId" = p.id
     WHERE p."userId" = ${userId}::uuid
-    GROUP BY p.id, p.name, p.note
+    GROUP BY p.id, p.name, p.note, p."openingBalance"
     ORDER BY p.name ASC
   `
 
   return rows.map((r) => {
+    const opening = Number(r.opening)
     const given = Number(r.given)
     const received = Number(r.received)
     return {
       id: r.id,
       name: r.name,
       note: r.note,
+      openingBalance: opening.toFixed(2),
       given: given.toFixed(2),
       received: received.toFixed(2),
-      net: (given - received).toFixed(2),
+      net: (opening + given - received).toFixed(2),
       count: Number(r.cnt),
       lastDate: r.last ? r.last.toISOString().slice(0, 10) : null,
     }
@@ -75,15 +81,17 @@ export type PeopleTotals = {
 export function peopleTotals(rows: PersonRow[]): PeopleTotals {
   let given = 0
   let received = 0
+  let opening = 0
   for (const r of rows) {
     given += Number(r.given)
     received += Number(r.received)
+    opening += Number(r.openingBalance)
   }
   return {
     peopleCount: rows.length,
     totalGiven: given.toFixed(2),
     totalReceived: received.toFixed(2),
-    netOutstanding: (given - received).toFixed(2),
+    netOutstanding: (opening + given - received).toFixed(2),
   }
 }
 
@@ -98,10 +106,21 @@ export async function listPersonOptions(userId: string): Promise<{ id: string; n
 
 // ── Person CRUD ──────────────────────────────────────────────────────────────
 
+/** Normalise a signed money string → "N.NN"; blank/undefined → "0". */
+function parseOpeningBalance(value: string | undefined): string {
+  const trimmed = (value ?? "").trim()
+  if (trimmed === "") return "0"
+  const num = Number(trimmed)
+  if (!Number.isFinite(num)) throw new ValidationError("Opening balance must be a number.")
+  return num.toFixed(2)
+}
+
 export async function createPerson(input: {
   userId: string
   name: string
   note?: string
+  /** Carried-forward balance from before the captured history (signed decimal). */
+  openingBalance?: string
   /**
    * When registering from a counterparty suggestion: assign every transaction
    * with this exact counterparty to the new person, so the ledger populates
@@ -118,7 +137,12 @@ export async function createPerson(input: {
   if (existing) throw new ValidationError(`"${name}" already exists.`)
 
   const person = await prisma.person.create({
-    data: { userId: input.userId, name, note: input.note?.trim() || null },
+    data: {
+      userId: input.userId,
+      name,
+      note: input.note?.trim() || null,
+      openingBalance: parseOpeningBalance(input.openingBalance),
+    },
   })
 
   let assigned = 0
@@ -168,6 +192,7 @@ export async function updatePerson(input: {
   personId: string
   name?: string
   note?: string | null
+  openingBalance?: string
 }): Promise<void> {
   const person = await prisma.person.findFirst({
     where: { id: input.personId, userId: input.userId },
@@ -180,6 +205,9 @@ export async function updatePerson(input: {
     data.name = name
   }
   if (input.note !== undefined) data.note = input.note?.trim() || null
+  if (input.openingBalance !== undefined) {
+    data.openingBalance = parseOpeningBalance(input.openingBalance)
+  }
   await prisma.person.update({ where: { id: person.id }, data })
 }
 

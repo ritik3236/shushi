@@ -6,7 +6,7 @@ import { Amount } from "@/components/finance/amount"
 import { EmptyState } from "@/components/finance/empty-state"
 import { Card, CardContent } from "@/components/ui/card"
 import { requirePageUser } from "@/lib/auth"
-import { formatDayMonth } from "@/lib/format"
+import { formatDayMonth, formatINR } from "@/lib/format"
 import { listPeople, peopleTotals, suggestPeople } from "@/lib/services/people"
 import { cn } from "@/lib/utils"
 
@@ -57,7 +57,7 @@ export default async function PeoplePage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-muted-foreground text-xs">
-          Net = given − received. Positive means they still owe you.
+          Net = opening + given − received. Positive means they still owe you.
         </p>
         <NewPersonButton />
       </div>
@@ -104,6 +104,11 @@ export default async function PeoplePage() {
                         ) : (
                           <span>no transactions assigned yet</span>
                         )}
+                        {Number(person.openingBalance) !== 0 ? (
+                          <span className="text-foreground/70">
+                            · opening {formatINR(person.openingBalance)}
+                          </span>
+                        ) : null}
                       </div>
                     </Link>
                     <div className="hidden shrink-0 text-right sm:block">

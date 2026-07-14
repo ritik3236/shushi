@@ -8,11 +8,24 @@ import { toErrorMessage } from "@/lib/errors"
 import { createPerson, deletePerson, updatePerson } from "@/lib/services/people"
 import type { ActionResult } from "@/lib/actions"
 
+/** Signed money string, e.g. "5000", "-26190.50". Blank is allowed (→ 0). */
+const moneyString = z
+  .string()
+  .trim()
+  .regex(/^-?\d+(\.\d{1,2})?$/, "Enter a valid amount, e.g. 5000 or -26190.")
+
 const createSchema = z.object({
   name: z.string().min(1, "Name is required.").max(60),
   note: z.string().max(200).optional(),
+  openingBalance: moneyString.optional(),
   /** Set when registering from a suggestion — assigns that counterparty's rows. */
   assignCounterparty: z.string().optional(),
+})
+
+const updateSchema = z.object({
+  name: z.string().min(1, "Name is required.").max(60).optional(),
+  note: z.string().max(200).nullable().optional(),
+  openingBalance: moneyString.optional(),
 })
 
 export async function createPersonAction(
@@ -31,11 +44,12 @@ export async function createPersonAction(
 
 export async function updatePersonAction(
   personId: string,
-  input: { name?: string; note?: string | null }
+  input: z.input<typeof updateSchema>
 ): Promise<ActionResult> {
   try {
     const user = await requireUser()
-    await updatePerson({ userId: user.id, personId, ...input })
+    const parsed = updateSchema.parse(input)
+    await updatePerson({ userId: user.id, personId, ...parsed })
     revalidatePath("/people")
     return { ok: true, data: undefined }
   } catch (error) {

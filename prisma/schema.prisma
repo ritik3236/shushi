@@ -69,6 +69,11 @@ model Person {
   userId    String   @db.Uuid
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
+  /// Net khata carried in from before the earliest captured statement, signed:
+  /// positive = they owed you at that point, negative = you owed them. Lets a
+  /// partial-history ledger reconcile to reality — net = openingBalance + given
+  /// − received. Defaults to 0 (full history captured).
+  openingBalance Decimal @default(0) @db.Decimal(14, 2)
   /// Legacy tag labels (no longer drives the ledger — transactions link to a
   /// person directly via Transaction.personId). Kept for back-compat.
   tags      String[] @default([])
