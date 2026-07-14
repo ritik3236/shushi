@@ -14,6 +14,9 @@ export const TRANSACTIONS_PAGE_SIZE = 50
 export type TransactionFilters = {
   /** "2026-06" */
   month?: string
+  /** Inclusive day-range bounds ("2026-06-01"). Take precedence over `month`. */
+  from?: string
+  to?: string
   accountId?: string
   /** Matches the category itself or any of its children. */
   categoryId?: string
@@ -69,15 +72,33 @@ function monthRange(month: string): { gte: Date; lt: Date } | null {
   return { gte: start.toJSDate(), lt: start.plus({ months: 1 }).toJSDate() }
 }
 
+/** Inclusive [from, to] day bounds → a Prisma date filter (either end optional). */
+function dayRange(from?: string, to?: string): { gte?: Date; lte?: Date } | null {
+  const range: { gte?: Date; lte?: Date } = {}
+  if (from) {
+    const start = DateTime.fromFormat(from, "yyyy-MM-dd", { zone: "utc" })
+    if (start.isValid) range.gte = start.startOf("day").toJSDate()
+  }
+  if (to) {
+    const end = DateTime.fromFormat(to, "yyyy-MM-dd", { zone: "utc" })
+    if (end.isValid) range.lte = end.endOf("day").toJSDate()
+  }
+  return range.gte || range.lte ? range : null
+}
+
 export async function listTransactions(
   userId: string,
   filters: TransactionFilters
 ): Promise<TransactionPage> {
   const where: Prisma.TransactionWhereInput = { userId }
 
-  if (filters.month) {
-    const range = monthRange(filters.month)
-    if (range) where.date = range
+  // A day-range (from/to) wins over month — the UI keeps them mutually exclusive.
+  const range = dayRange(filters.from, filters.to)
+  if (range) {
+    where.date = range
+  } else if (filters.month) {
+    const monthBounds = monthRange(filters.month)
+    if (monthBounds) where.date = monthBounds
   }
   if (filters.accountId) where.accountId = filters.accountId
   if (filters.direction) where.direction = filters.direction

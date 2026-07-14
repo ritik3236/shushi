@@ -39,6 +39,8 @@ function toFilters(sp: SearchParams): TransactionFilters {
   const page = Number(first(sp.page))
   return {
     month: first(sp.month),
+    from: first(sp.from),
+    to: first(sp.to),
     accountId: first(sp.account),
     categoryId: first(sp.category),
     direction: direction === "DEBIT" || direction === "CREDIT" ? direction : undefined,
@@ -127,6 +129,8 @@ export default async function TransactionsPage({
   const filters = toFilters(sp)
   const filtersActive = Boolean(
     filters.month ||
+      filters.from ||
+      filters.to ||
       filters.accountId ||
       filters.categoryId ||
       filters.direction ||

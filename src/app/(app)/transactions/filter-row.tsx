@@ -28,6 +28,7 @@ import { formatMonth } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { CategoryOption } from "@/lib/services/categories"
 
+import { DateRangeFilter, type DateRangeValue } from "./date-range-filter"
 import { TagFilter } from "./tag-filter"
 
 /** Every URL key that counts toward the "active filters" badge. */
@@ -114,13 +115,19 @@ export function FilterRow({
     router.replace(pathname)
   }
 
-  const activeCount = ACTIVE_KEYS.filter((key) => searchParams.get(key)).length
+  const dateActive = Boolean(searchParams.get("from") || searchParams.get("to"))
+  const activeCount =
+    ACTIVE_KEYS.filter((key) => searchParams.get(key)).length + (dateActive ? 1 : 0)
   const activeTag = searchParams.get("tag")
   const activePerson = searchParams.get("person")
   const activePersonName = people.find((p) => p.id === activePerson)?.name
 
   const monthValue = searchParams.get("month") ?? "all"
   const accountValue = searchParams.get("account") ?? "all"
+  const dateRange: DateRangeValue = {
+    from: searchParams.get("from"),
+    to: searchParams.get("to"),
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -128,7 +135,9 @@ export function FilterRow({
       <div className="hidden items-center gap-2 md:flex">
         <Select
           value={monthValue}
-          onValueChange={(value) => apply({ month: value === "all" ? null : value })}
+          onValueChange={(value) =>
+            apply({ month: value === "all" ? null : value, from: null, to: null })
+          }
         >
           <SelectTrigger className="w-32" aria-label="Filter by month">
             <SelectValue />
@@ -142,6 +151,12 @@ export function FilterRow({
             ))}
           </SelectContent>
         </Select>
+
+        <DateRangeFilter
+          value={dateRange}
+          months={2}
+          onChange={(next) => apply({ from: next.from, to: next.to, month: null })}
+        />
 
         <Select
           value={accountValue}
@@ -222,6 +237,8 @@ export function FilterRow({
             people={people}
             initial={{
               month: searchParams.get("month") ?? "",
+              from: searchParams.get("from"),
+              to: searchParams.get("to"),
               account: searchParams.get("account") ?? "",
               category: searchParams.get("category"),
               direction: searchParams.get("direction") ?? "",
@@ -250,6 +267,8 @@ export function FilterRow({
 
 type DrawerInitial = {
   month: string
+  from: string | null
+  to: string | null
   account: string
   category: string | null
   direction: string
@@ -283,6 +302,10 @@ function FiltersDrawer({
   onClear: () => void
 }) {
   const [month, setMonth] = useState(initial.month)
+  const [dateRange, setDateRange] = useState<DateRangeValue>({
+    from: initial.from,
+    to: initial.to,
+  })
   const [account, setAccount] = useState(initial.account)
   const [category, setCategory] = useState(initial.category)
   const [direction, setDirection] = useState(initial.direction)
@@ -294,6 +317,8 @@ function FiltersDrawer({
   function submit() {
     onApply({
       month: month || null,
+      from: dateRange.from,
+      to: dateRange.to,
       account: account || null,
       category,
       direction: direction || null,
@@ -308,7 +333,13 @@ function FiltersDrawer({
     <>
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         <Field label="Month">
-          <Select value={month || "all"} onValueChange={(v) => setMonth(v === "all" ? "" : v)}>
+          <Select
+            value={month || "all"}
+            onValueChange={(v) => {
+              setMonth(v === "all" ? "" : v)
+              if (v !== "all") setDateRange({ from: null, to: null })
+            }}
+          >
             <SelectTrigger className="w-full" aria-label="Filter by month">
               <SelectValue />
             </SelectTrigger>
@@ -321,6 +352,17 @@ function FiltersDrawer({
               ))}
             </SelectContent>
           </Select>
+        </Field>
+
+        <Field label="Date range">
+          <DateRangeFilter
+            value={dateRange}
+            className="w-full"
+            onChange={(next) => {
+              setDateRange(next)
+              if (next.from || next.to) setMonth("")
+            }}
+          />
         </Field>
 
         <Field label="Account">
