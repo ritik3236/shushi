@@ -65,9 +65,9 @@ export function CategorySelect({
                 <span className="truncate">{leaf}</span>
               </>
             ) : (
-              <span className="text-muted-foreground/70 inline-flex items-center gap-1.5">
+              <span className="text-muted-foreground/70 inline-flex min-w-0 items-center gap-1.5">
                 <span aria-hidden className="size-2 shrink-0 rounded-full border border-dashed border-current" />
-                <span>Uncategorized</span>
+                <span className="truncate">Uncategorized</span>
               </span>
             )}
           </button>
