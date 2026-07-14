@@ -153,19 +153,34 @@ export async function createPerson(input: {
   return { id: person.id, assigned }
 }
 
-/** Assign every transaction with the given counterparty to a person. */
+/**
+ * The system "Transfers › Khata" category, auto-applied to person-linked rows so
+ * every khata transaction is categorised. Null only if the seed hasn't run.
+ */
+async function khataCategoryId(): Promise<string | null> {
+  const cat = await prisma.category.findFirst({
+    where: { name: "Khata", kind: "TRANSFER", isSystem: true, parent: { name: "Transfers" } },
+    select: { id: true },
+  })
+  return cat?.id ?? null
+}
+
+/** Assign every transaction with the given counterparty to a person (khata). */
 export async function assignCounterpartyToPerson(
   userId: string,
   counterparty: string,
   personId: string
 ): Promise<number> {
-  const count = await prisma.$executeRaw`
+  const khataId = await khataCategoryId()
+  // A khata row is a Transfer › Khata by rule — set the category with the link.
+  const setKhata = khataId ? Prisma.sql`, "categoryId" = ${khataId}` : Prisma.empty
+  const count = await prisma.$executeRaw(Prisma.sql`
     UPDATE "Transaction"
-    SET "personId" = ${personId}
+    SET "personId" = ${personId}${setKhata}
     WHERE "userId" = ${userId}::uuid
       AND counterparty = ${counterparty}
       AND "personId" IS DISTINCT FROM ${personId}
-  `
+  `)
   // Those rows just left the spend/income rollup (khata now) — rebuild.
   if (count > 0) await rebuildSummaries(userId)
   return count
@@ -186,10 +201,18 @@ export async function assignTransactionToPerson(
   }
   const txn = await prisma.transaction.findFirst({
     where: { id: transactionId, userId },
-    select: { date: true },
+    select: { date: true, categoryId: true },
   })
   if (!txn) throw new NotFoundError("Transaction not found.")
-  await prisma.transaction.update({ where: { id: transactionId }, data: { personId } })
+
+  // Khata rows carry the Transfers › Khata category: overwrite on assign; on
+  // un-assign, clear it (only if it's Khata) so the row can re-enter spend.
+  const khataId = await khataCategoryId()
+  const data: Prisma.TransactionUncheckedUpdateInput = { personId }
+  if (personId && khataId) data.categoryId = khataId
+  else if (!personId && khataId && txn.categoryId === khataId) data.categoryId = null
+
+  await prisma.transaction.update({ where: { id: transactionId }, data })
   // The row moves in/out of the khata → out of/into the spend-income rollup.
   await rebuildSummaries(userId, [monthKey(txn.date)])
 }

@@ -34,7 +34,7 @@ const CATEGORIES: CategorySeed[] = [
   { name: "Wallet Top-ups", kind: "EXPENSE", icon: "wallet-cards", color: "chart-8" },
   { name: "Cash", kind: "EXPENSE", icon: "banknote", color: "chart-8" },
   { name: "Income", kind: "INCOME", icon: "wallet", color: "chart-2", children: ["Salary", "Contractor Fee", "Interest", "Cashback & Rewards", "Refunds", "Borrowed & Returned"] },
-  { name: "Transfers", kind: "TRANSFER", icon: "arrow-left-right", color: "chart-8", children: ["Self Transfer", "CC Payment"] },
+  { name: "Transfers", kind: "TRANSFER", icon: "arrow-left-right", color: "chart-8", children: ["Self Transfer", "CC Payment", "Khata"] },
 ]
 
 type RuleSeed = {
