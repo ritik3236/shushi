@@ -20,13 +20,16 @@ function Brand() {
   )
 }
 
+// The shell owns chrome only — a pinned sidebar and a mobile top/bottom bar. The
+// document itself scrolls (no nested overflow container), and each page owns its
+// own width and padding via <PageContainer> so it can go full-bleed when it wants.
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
   return (
-    <div className="flex h-dvh w-full">
-      {/* Desktop sidebar */}
+    <div className="flex h-dvh w-full overflow-hidden">
+      {/* Desktop sidebar — fixed chrome; never scrolls with page content. */}
       <aside className="bg-sidebar border-sidebar-border hidden w-56 shrink-0 flex-col border-r lg:flex">
         <div className="flex h-14 items-center px-2">
           <Brand />
@@ -60,17 +63,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile topbar — brand + account; navigation lives in the bottom bar */}
-        <header className="bg-background flex h-14 shrink-0 items-center border-b px-3 lg:hidden">
+        {/* Mobile topbar — brand + account; navigation lives in the bottom bar. */}
+        <header className="bg-background/90 sticky top-0 z-30 flex h-14 shrink-0 items-center border-b px-3 backdrop-blur lg:hidden">
           <Brand />
           <div className="ml-auto">
             <UserButton size="icon" />
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+4.5rem)] lg:pb-0">
-          <div className="mx-auto w-full max-w-6xl p-4 md:p-6">{children}</div>
-        </main>
+        {/* Bounded height, no scroll of its own — the page inside owns scrolling. */}
+        <main className="min-h-0 min-w-0 flex-1">{children}</main>
       </div>
 
       <BottomNav />

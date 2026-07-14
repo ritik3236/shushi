@@ -5,7 +5,6 @@ import { SearchX, Upload, UserRound } from "lucide-react"
 import { Amount } from "@/components/finance/amount"
 import { EmptyState } from "@/components/finance/empty-state"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import {
   Tooltip,
   TooltipContent,
@@ -85,12 +84,12 @@ function TxRow({ row, categoryOptions, tagNames, people }: {
             {row.person.name}
           </span>
         ) : null}
-        <CategoryCell
-          transactionId={row.id}
-          categoryId={row.category?.id ?? null}
-          options={categoryOptions}
-        />
       </div>
+      <CategoryCell
+        transactionId={row.id}
+        categoryId={row.category?.id ?? null}
+        options={categoryOptions}
+      />
       <div className="w-24 shrink-0 text-right">
         {row.excludeFromSpend ? (
           <TooltipProvider>
@@ -177,100 +176,120 @@ export default async function TransactionsPage({
 
   if (noDataAtAll) {
     return (
-      <EmptyState
-        icon={Upload}
-        title="No transactions yet"
-        hint="Import a bank or credit card statement and every transaction will land here."
-        action={
-          <Button asChild size="sm">
-            <Link href="/imports">Import statements</Link>
-          </Button>
-        }
-      />
+      <div className="flex h-full items-center justify-center p-6">
+        <EmptyState
+          icon={Upload}
+          title="No transactions yet"
+          hint="Import a bank or credit card statement and every transaction will land here."
+          action={
+            <Button asChild size="sm">
+              <Link href="/imports">Import statements</Link>
+            </Button>
+          }
+        />
+      </div>
     )
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
-      {/* Controls stay pinned while the list scrolls under them. */}
-      <div className="bg-background sticky top-0 z-20 border-b py-2">
-        <FilterRow months={months} accounts={accounts} categories={categoryOptions} tags={tags} />
-      </div>
+    <div className="flex h-full justify-center">
+      {/* A raised card panel on the recessed page ground — the list's own surface. */}
+      <div className="bg-card border-border/60 flex h-full w-full max-w-3xl flex-col border-x">
+        {/* Fixed toolbar — part of the chrome, never scrolls. */}
+        <div className="shrink-0 border-b">
+          <div className="px-3 py-2">
+            <FilterRow
+              months={months}
+              accounts={accounts}
+              categories={categoryOptions}
+              tags={tags}
+              people={people}
+            />
+          </div>
+        </div>
 
-      {data.rows.length === 0 ? (
-        <EmptyState
-          icon={SearchX}
-          title="No matching transactions"
-          hint="Nothing matches the current filters — loosen them or clear everything."
-          action={
-            <Button asChild variant="outline" size="sm">
-              <Link href="/transactions">Clear filters</Link>
-            </Button>
-          }
-        />
-      ) : (
-        <Card className="gap-0 overflow-hidden py-0">
-          <div className="divide-border/70 divide-y">
-            {groups.map((group) => (
-              <section key={group.date}>
-                <div className="text-muted-foreground bg-muted/40 flex items-center justify-between px-3 py-1.5 text-[11px] font-medium tracking-wide">
-                  <span className="uppercase">{dayHeading(group.date)}</span>
-                  <Amount
-                    value={Math.abs(group.net)}
-                    direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
-                    className="text-[11px] opacity-80"
-                  />
-                </div>
-                {group.rows.map((row) => (
-                  <TxRow
-                    key={row.id}
-                    row={row}
-                    categoryOptions={categoryOptions}
-                    tagNames={tagNames}
-                    people={people}
-                  />
-                ))}
-              </section>
-            ))}
-          </div>
-          <div className="text-muted-foreground flex items-center justify-between border-t px-4 py-2 text-xs">
-            <span>
-              {countFormat.format(data.total)} transaction{data.total === 1 ? "" : "s"} · page{" "}
-              {data.page} of {data.pageCount}
-            </span>
-            <div className="flex items-center gap-2">
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className={cn(data.page <= 1 && "pointer-events-none opacity-50")}
-              >
-                <Link
-                  href={pageHref(sp, data.page - 1)}
-                  aria-disabled={data.page <= 1}
-                  tabIndex={data.page <= 1 ? -1 : undefined}
-                >
-                  Prev
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className={cn(data.page >= data.pageCount && "pointer-events-none opacity-50")}
-              >
-                <Link
-                  href={pageHref(sp, data.page + 1)}
-                  aria-disabled={data.page >= data.pageCount}
-                  tabIndex={data.page >= data.pageCount ? -1 : undefined}
-                >
-                  Next
-                </Link>
-              </Button>
+        {/* The only thing that scrolls: the list. */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-6">
+          {data.rows.length === 0 ? (
+            <div className="p-6">
+              <EmptyState
+                icon={SearchX}
+                title="No matching transactions"
+                hint="Nothing matches the current filters — loosen them or clear everything."
+                action={
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/transactions">Clear filters</Link>
+                  </Button>
+                }
+              />
             </div>
+          ) : (
+            <>
+              <div className="divide-border/60 divide-y">
+                {groups.map((group) => (
+                  <section key={group.date}>
+                    <div className="text-muted-foreground bg-muted/30 flex items-center justify-between px-3 py-1.5 text-[11px] font-medium tracking-wide">
+                      <span className="uppercase">{dayHeading(group.date)}</span>
+                      <Amount
+                        value={Math.abs(group.net)}
+                        direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
+                        className="text-[11px] opacity-80"
+                      />
+                    </div>
+                    {group.rows.map((row) => (
+                      <TxRow
+                        key={row.id}
+                        row={row}
+                        categoryOptions={categoryOptions}
+                        tagNames={tagNames}
+                        people={people}
+                      />
+                    ))}
+                  </section>
+                ))}
+              </div>
+              <div className="text-muted-foreground flex items-center justify-between px-3 py-3 text-xs">
+                <span>
+                  {countFormat.format(data.total)} transaction{data.total === 1 ? "" : "s"} · page{" "}
+                  {data.page} of {data.pageCount}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className={cn(data.page <= 1 && "pointer-events-none opacity-50")}
+                  >
+                    <Link
+                      href={pageHref(sp, data.page - 1)}
+                      aria-disabled={data.page <= 1}
+                      tabIndex={data.page <= 1 ? -1 : undefined}
+                    >
+                      Prev
+                    </Link>
+                  </Button>
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className={cn(data.page >= data.pageCount && "pointer-events-none opacity-50")}
+                  >
+                    <Link
+                      href={pageHref(sp, data.page + 1)}
+                      aria-disabled={data.page >= data.pageCount}
+                      tabIndex={data.page >= data.pageCount ? -1 : undefined}
+                    >
+                      Next
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
           </div>
-        </Card>
-      )}
+        </div>
+      </div>
     </div>
   )
 }

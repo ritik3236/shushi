@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { Check, Hash, SlidersHorizontal, X } from "lucide-react"
+import { Check, Hash, SlidersHorizontal, UserRound, X } from "lucide-react"
 
 import { CategorySelect } from "@/components/finance/category-select"
 import { Button } from "@/components/ui/button"
@@ -38,6 +38,7 @@ const ACTIVE_KEYS = [
   "direction",
   "q",
   "tag",
+  "person",
   "uncategorized",
   "hideTransfers",
 ] as const
@@ -54,11 +55,13 @@ export function FilterRow({
   accounts,
   categories,
   tags,
+  people,
 }: {
   months: string[]
   accounts: { id: string; name: string }[]
   categories: CategoryOption[]
   tags: { tag: string; count: number }[]
+  people: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -113,10 +116,11 @@ export function FilterRow({
 
   const activeCount = ACTIVE_KEYS.filter((key) => searchParams.get(key)).length
   const activeTag = searchParams.get("tag")
+  const activePerson = searchParams.get("person")
+  const activePersonName = people.find((p) => p.id === activePerson)?.name
 
   const monthValue = searchParams.get("month") ?? "all"
   const accountValue = searchParams.get("account") ?? "all"
-  const directionValue = searchParams.get("direction") ?? "all"
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -156,16 +160,6 @@ export function FilterRow({
           </SelectContent>
         </Select>
 
-        <Tabs
-          value={directionValue}
-          onValueChange={(value) => apply({ direction: value === "all" ? null : value })}
-        >
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="DEBIT">Money out</TabsTrigger>
-            <TabsTrigger value="CREDIT">Money in</TabsTrigger>
-          </TabsList>
-        </Tabs>
       </div>
 
       <Input
@@ -186,6 +180,20 @@ export function FilterRow({
         >
           <Hash className="opacity-60" />
           {activeTag}
+          <X className="opacity-60" />
+        </Button>
+      ) : null}
+
+      {activePerson ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-8 gap-1"
+          onClick={() => apply({ person: null })}
+          aria-label={`Remove person filter ${activePersonName ?? ""}`}
+        >
+          <UserRound className="opacity-60" />
+          {activePersonName ?? "Person"}
           <X className="opacity-60" />
         </Button>
       ) : null}
@@ -211,12 +219,14 @@ export function FilterRow({
             accounts={accounts}
             categories={categories}
             tags={tags}
+            people={people}
             initial={{
               month: searchParams.get("month") ?? "",
               account: searchParams.get("account") ?? "",
               category: searchParams.get("category"),
               direction: searchParams.get("direction") ?? "",
               tag: searchParams.get("tag"),
+              person: searchParams.get("person") ?? "",
               uncategorized: searchParams.get("uncategorized") === "1",
               hideTransfers: searchParams.get("hideTransfers") === "1",
             }}
@@ -244,6 +254,7 @@ type DrawerInitial = {
   category: string | null
   direction: string
   tag: string | null
+  person: string
   uncategorized: boolean
   hideTransfers: boolean
 }
@@ -257,6 +268,7 @@ function FiltersDrawer({
   accounts,
   categories,
   tags,
+  people,
   initial,
   onApply,
   onClear,
@@ -265,6 +277,7 @@ function FiltersDrawer({
   accounts: { id: string; name: string }[]
   categories: CategoryOption[]
   tags: { tag: string; count: number }[]
+  people: { id: string; name: string }[]
   initial: DrawerInitial
   onApply: (updates: Updates) => void
   onClear: () => void
@@ -274,6 +287,7 @@ function FiltersDrawer({
   const [category, setCategory] = useState(initial.category)
   const [direction, setDirection] = useState(initial.direction)
   const [tag, setTag] = useState(initial.tag)
+  const [person, setPerson] = useState(initial.person)
   const [uncategorized, setUncategorized] = useState(initial.uncategorized)
   const [hideTransfers, setHideTransfers] = useState(initial.hideTransfers)
 
@@ -284,6 +298,7 @@ function FiltersDrawer({
       category,
       direction: direction || null,
       tag,
+      person: person || null,
       uncategorized: uncategorized ? "1" : null,
       hideTransfers: hideTransfers ? "1" : null,
     })
@@ -324,16 +339,40 @@ function FiltersDrawer({
           </Select>
         </Field>
 
+        {people.length > 0 ? (
+          <Field label="Person">
+            <Select value={person || "all"} onValueChange={(v) => setPerson(v === "all" ? "" : v)}>
+              <SelectTrigger className="w-full" aria-label="Filter by person">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All people</SelectItem>
+                {people.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        ) : null}
+
         <Field label="Direction">
           <Tabs value={direction || "all"} onValueChange={(v) => setDirection(v === "all" ? "" : v)}>
             <TabsList className="w-full">
               <TabsTrigger value="all" className="flex-1">
                 All
               </TabsTrigger>
-              <TabsTrigger value="DEBIT" className="flex-1">
+              <TabsTrigger
+                value="DEBIT"
+                className="flex-1 data-[state=active]:bg-destructive/10 data-[state=active]:text-destructive dark:data-[state=active]:text-destructive"
+              >
                 Money out
               </TabsTrigger>
-              <TabsTrigger value="CREDIT" className="flex-1">
+              <TabsTrigger
+                value="CREDIT"
+                className="flex-1 data-[state=active]:bg-success/15 data-[state=active]:text-success dark:data-[state=active]:text-success"
+              >
                 Money in
               </TabsTrigger>
             </TabsList>
