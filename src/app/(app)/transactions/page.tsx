@@ -93,7 +93,7 @@ function TxRow({ row, categoryOptions, tagNames, people }: {
         options={categoryOptions}
       />
       <div className="w-24 shrink-0 text-right">
-        {row.excludeFromSpend ? (
+        {row.excludeFromSpend || row.person ? (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -101,7 +101,11 @@ function TxRow({ row, categoryOptions, tagNames, people }: {
                   <Amount value={row.amount} direction={row.direction} />
                 </span>
               </TooltipTrigger>
-              <TooltipContent>Excluded from spend</TooltipContent>
+              <TooltipContent>
+                {row.person
+                  ? `On ${row.person.name}'s khata — not counted in spend or income`
+                  : "Excluded from spend"}
+              </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         ) : (

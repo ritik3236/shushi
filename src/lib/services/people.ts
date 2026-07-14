@@ -3,6 +3,7 @@ import "server-only"
 import { Prisma } from "@prisma/client"
 
 import { prisma } from "@/lib/prisma"
+import { monthKey, rebuildSummaries } from "@/lib/services/summaries"
 import { NotFoundError, ValidationError } from "@/lib/errors"
 
 // People ledger ("khata"). You REGISTER a person, then assign transactions to
@@ -158,13 +159,16 @@ export async function assignCounterpartyToPerson(
   counterparty: string,
   personId: string
 ): Promise<number> {
-  return prisma.$executeRaw`
+  const count = await prisma.$executeRaw`
     UPDATE "Transaction"
     SET "personId" = ${personId}
     WHERE "userId" = ${userId}::uuid
       AND counterparty = ${counterparty}
       AND "personId" IS DISTINCT FROM ${personId}
   `
+  // Those rows just left the spend/income rollup (khata now) — rebuild.
+  if (count > 0) await rebuildSummaries(userId)
+  return count
 }
 
 /** Assign a single transaction to a person, or clear it (personId = null). */
@@ -180,11 +184,14 @@ export async function assignTransactionToPerson(
     })
     if (!person) throw new NotFoundError("Person not found.")
   }
-  const result = await prisma.transaction.updateMany({
+  const txn = await prisma.transaction.findFirst({
     where: { id: transactionId, userId },
-    data: { personId },
+    select: { date: true },
   })
-  if (!result.count) throw new NotFoundError("Transaction not found.")
+  if (!txn) throw new NotFoundError("Transaction not found.")
+  await prisma.transaction.update({ where: { id: transactionId }, data: { personId } })
+  // The row moves in/out of the khata → out of/into the spend-income rollup.
+  await rebuildSummaries(userId, [monthKey(txn.date)])
 }
 
 export async function updatePerson(input: {
@@ -215,6 +222,8 @@ export async function deletePerson(userId: string, personId: string): Promise<vo
   // Transaction.personId is ON DELETE SET NULL — rows are unassigned, not lost.
   const result = await prisma.person.deleteMany({ where: { id: personId, userId } })
   if (!result.count) throw new NotFoundError("Person not found.")
+  // The freed rows re-enter the spend/income rollup — rebuild.
+  await rebuildSummaries(userId)
 }
 
 // ── Discovery: suggest people from frequent counterparties ───────────────────

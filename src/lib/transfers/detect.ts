@@ -26,6 +26,7 @@ type Candidate = {
   direction: "DEBIT" | "CREDIT"
   amount: string
   narration: string
+  counterparty: string | null
   refNo: string | null
   channel: string | null
   linked: boolean
@@ -59,6 +60,7 @@ export async function detectTransfers(userId: string): Promise<number> {
         direction: true,
         amount: true,
         narration: true,
+        counterparty: true,
         refNo: true,
         channel: true,
         account: { select: { type: true } },
@@ -77,6 +79,7 @@ export async function detectTransfers(userId: string): Promise<number> {
     direction: row.direction,
     amount: row.amount.toFixed(2),
     narration: row.narration.toUpperCase(),
+    counterparty: row.counterparty,
     refNo: row.refNo,
     channel: row.channel,
     linked: false,
@@ -150,6 +153,34 @@ export async function detectTransfers(userId: string): Promise<number> {
           daysBetween(c.date, debit.date) <= 3 &&
           (mentionsSelf(c.narration) || mentionsSelf(debit.narration))
       )
+      .sort((a, b) => daysBetween(a.date, debit.date) - daysBetween(b.date, debit.date))[0]
+    if (credit) {
+      pairUp(debit, credit, credit.accountType === "CREDIT_CARD" ? "CC_PAYMENT" : "SELF_TRANSFER")
+    }
+  }
+
+  // Pass 4 — self-transfers a per-transaction fee makes uneven, so passes 1–3
+  // (exact-amount) miss them. Tightly scoped to stay conservative: the DEBIT went
+  // to a bare phone-number/VPA beneficiary (how a self IMPS to your own number
+  // shows), a CREDIT in another account NAMES the user, and the debit exceeds the
+  // credit by only a small fee (₹100,005.90 out ↔ ₹100,000 in, ₹5.90 IMPS charge).
+  const SELF_FEE_MAX = 15 // ₹
+  const isPhoneBeneficiary = (c: Candidate) => /^\d{10,12}$/.test((c.counterparty ?? "").trim())
+  const feeDebits = candidates.filter(
+    (c) => !c.linked && c.direction === "DEBIT" && isPhoneBeneficiary(c)
+  )
+  for (const debit of feeDebits) {
+    const credit = candidates
+      .filter((c) => {
+        if (c.linked || c.direction !== "CREDIT" || c.accountId === debit.accountId) return false
+        const fee = Number(debit.amount) - Number(c.amount)
+        return (
+          fee >= 0 &&
+          fee <= SELF_FEE_MAX &&
+          daysBetween(c.date, debit.date) <= 3 &&
+          mentionsSelf(c.narration)
+        )
+      })
       .sort((a, b) => daysBetween(a.date, debit.date) - daysBetween(b.date, debit.date))[0]
     if (credit) {
       pairUp(debit, credit, credit.accountType === "CREDIT_CARD" ? "CC_PAYMENT" : "SELF_TRANSFER")

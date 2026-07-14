@@ -9,10 +9,11 @@ import { prisma } from "@/lib/prisma"
 // rebuilt here whenever transactions change. Month ('YYYY-MM') is the base
 // grain — year and financial-year views just sum the relevant month rows.
 //
-// Definitions mirror the analytics rules exactly: excludeFromSpend rows and
-// TRANSFER-kind categories are left out; uncategorized rows are counted. Enum
-// columns are compared as ::text so the multiSchema enum type never has to
-// resolve through search_path.
+// Definitions mirror the analytics rules exactly: excludeFromSpend rows,
+// TRANSFER-kind categories, and person-assigned rows (khata — lending, not
+// spend/income) are left out; uncategorized rows are counted. Enum columns are
+// compared as ::text so the multiSchema enum type never has to resolve through
+// search_path.
 
 /** 'YYYY-MM' for a JS Date (UTC — transaction dates are stored as DATE). */
 export function monthKey(date: Date): string {
@@ -40,6 +41,7 @@ export async function rebuildSummaries(userId: string, months?: string[]): Promi
   const countedFilter = Prisma.sql`
     t."userId" = ${userId}::uuid
     AND t."excludeFromSpend" = false
+    AND t."personId" IS NULL
     AND (c.kind IS NULL OR c.kind::text <> 'TRANSFER')
     ${txMonthFilter}
   `

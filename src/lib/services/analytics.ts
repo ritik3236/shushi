@@ -242,6 +242,7 @@ export async function getDashboardData(
       userId,
       direction: "DEBIT",
       excludeFromSpend: false,
+      personId: null,
       date: { gte: rangeStart, lt: rangeEnd },
       OR: [{ categoryId: null }, { category: { kind: { not: "TRANSFER" } } }],
     },
