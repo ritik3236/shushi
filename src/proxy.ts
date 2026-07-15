@@ -27,13 +27,16 @@ export default function proxy(request: NextRequest) {
   return authMiddleware(request)
 }
 
+// Gate everything by default (denylist, not allowlist — a new route is
+// protected without touching this file). The negative lookahead lets through
+// ONLY:
+//   • api    — self-guards (getCurrentUser → 401 JSON); a 307 to the HTML
+//              sign-in page would corrupt fetch() responses (see above).
+//   • _next  — framework assets (static chunks, image optimizer, RSC payloads).
+//   • auth   — the public sign-in / sign-up / sign-out views.
+//   • *.*    — any static file with an extension (favicon.ico, icon.svg, images).
+// Every other path (/, /dashboard, /people, …) hits auth.middleware and is
+// redirected to sign-in when unauthenticated.
 export const config = {
-  matcher: [
-    "/dashboard/:path*",
-    "/transactions/:path*",
-    "/accounts/:path*",
-    "/imports/:path*",
-    "/payslips/:path*",
-    "/categories/:path*",
-  ],
+  matcher: ["/((?!api|_next|auth|.*\\..*).*)"],
 }
