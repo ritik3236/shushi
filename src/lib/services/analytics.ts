@@ -87,73 +87,87 @@ export async function listAccountOptions(
 }
 
 export async function getAccountSummaries(userId: string): Promise<AccountSummary[]> {
-  const accounts = await prisma.account.findMany({
-    where: { userId },
-    orderBy: { createdAt: "asc" },
-    include: { _count: { select: { transactions: true } } },
+  // Latest txn + latest committed import PER ACCOUNT in one query each, via
+  // Postgres DISTINCT ON (raw, so it never fetches every row to dedupe), plus
+  // one grouped sum for every account's credit/debit totals. Four fixed queries,
+  // concurrent — independent of account count (was ~2N+1 in a per-account loop).
+  const [accounts, latestTxns, latestImports, sums] = await Promise.all([
+    prisma.account.findMany({
+      where: { userId },
+      orderBy: { createdAt: "asc" },
+      include: { _count: { select: { transactions: true } } },
+    }),
+    prisma.$queryRaw<{ accountId: string; date: Date; balanceAfter: string | null }[]>`
+      SELECT DISTINCT ON ("accountId") "accountId", date, "balanceAfter"
+      FROM "Transaction"
+      WHERE "userId" = ${userId}::uuid
+      ORDER BY "accountId", date DESC, "createdAt" DESC
+    `,
+    prisma.$queryRaw<{ accountId: string; statementMeta: Record<string, string> | null }[]>`
+      SELECT DISTINCT ON ("accountId") "accountId", "statementMeta"
+      FROM "StatementImport"
+      WHERE "userId" = ${userId}::uuid AND status = 'COMMITTED'
+      ORDER BY "accountId", "periodEnd" DESC, "committedAt" DESC
+    `,
+    prisma.transaction.groupBy({
+      by: ["accountId", "direction"],
+      where: { userId },
+      _sum: { amount: true },
+    }),
+  ])
+
+  const latestByAccount = new Map(latestTxns.map((t) => [t.accountId, t]))
+  const importByAccount = new Map(latestImports.map((i) => [i.accountId, i]))
+  const netByAccount = new Map<string, number>()
+  for (const s of sums) {
+    const amount = Number(s._sum.amount ?? 0)
+    const signed = s.direction === "CREDIT" ? amount : -amount
+    netByAccount.set(s.accountId, (netByAccount.get(s.accountId) ?? 0) + signed)
+  }
+
+  return accounts.map((account) => {
+    const latest = latestByAccount.get(account.id)
+    const opening = Number(account.openingBalance)
+    const hasStatementBalance = account.type === "SAVINGS" && latest?.balanceAfter != null
+
+    let due: string | null = null
+    if (account.type === "CREDIT_CARD") {
+      due = importByAccount.get(account.id)?.statementMeta?.totalDue ?? null
+    }
+
+    // Savings balance: prefer the statement's running balance; if the import was
+    // balance-less (GPay → Union Bank) track it from opening + net once an
+    // opening balance is set. `net` (Σcredits − Σdebits) drives that and the
+    // edit dialog's live "resulting balance" hint.
+    let balance: string | null = null
+    let net: string | null = null
+    if (account.type === "SAVINGS") {
+      if (latest?.balanceAfter != null) {
+        balance = Number(latest.balanceAfter).toFixed(2)
+      } else {
+        const netNum = netByAccount.get(account.id) ?? 0
+        net = netNum.toFixed(2)
+        if (opening !== 0) balance = (opening + netNum).toFixed(2)
+      }
+    }
+
+    return {
+      id: account.id,
+      name: account.name,
+      bank: account.bank,
+      type: account.type,
+      accountNumber: account.accountNumber,
+      color: account.color,
+      openingBalance: opening.toFixed(2),
+      net,
+      hasStatementBalance,
+      balance,
+      due,
+      creditLimit: account.creditLimit?.toFixed(2) ?? null,
+      lastActivity: latest?.date.toISOString().slice(0, 10) ?? null,
+      transactionCount: account._count.transactions,
+    }
   })
-
-  return Promise.all(
-    accounts.map(async (account) => {
-      const latest = await prisma.transaction.findFirst({
-        where: { accountId: account.id },
-        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-        select: { date: true, balanceAfter: true },
-      })
-      let due: string | null = null
-      if (account.type === "CREDIT_CARD") {
-        const latestImport = await prisma.statementImport.findFirst({
-          where: { accountId: account.id, status: "COMMITTED" },
-          orderBy: [{ periodEnd: "desc" }, { committedAt: "desc" }],
-          select: { statementMeta: true },
-        })
-        const meta = latestImport?.statementMeta as Record<string, string> | null
-        due = meta?.totalDue ?? null
-      }
-
-      // Savings balance: prefer the statement's running balance; if the import
-      // was balance-less (GPay → Union Bank) track it from opening + net once an
-      // opening balance is set. `net` (Σcredits − Σdebits) drives that and the
-      // edit dialog's live "resulting balance" hint.
-      const opening = Number(account.openingBalance)
-      const hasStatementBalance = account.type === "SAVINGS" && latest?.balanceAfter != null
-      let balance: string | null = null
-      let net: string | null = null
-      if (account.type === "SAVINGS") {
-        if (latest?.balanceAfter != null) {
-          balance = latest.balanceAfter.toFixed(2)
-        } else {
-          const sums = await prisma.transaction.groupBy({
-            by: ["direction"],
-            where: { accountId: account.id },
-            _sum: { amount: true },
-          })
-          const credit = Number(sums.find((s) => s.direction === "CREDIT")?._sum.amount ?? 0)
-          const debit = Number(sums.find((s) => s.direction === "DEBIT")?._sum.amount ?? 0)
-          const netNum = credit - debit
-          net = netNum.toFixed(2)
-          if (opening !== 0) balance = (opening + netNum).toFixed(2)
-        }
-      }
-
-      return {
-        id: account.id,
-        name: account.name,
-        bank: account.bank,
-        type: account.type,
-        accountNumber: account.accountNumber,
-        color: account.color,
-        openingBalance: opening.toFixed(2),
-        net,
-        hasStatementBalance,
-        balance,
-        due,
-        creditLimit: account.creditLimit?.toFixed(2) ?? null,
-        lastActivity: latest?.date.toISOString().slice(0, 10) ?? null,
-        transactionCount: account._count.transactions,
-      }
-    })
-  )
 }
 
 type MonthlyRow = { month: string; income: number; spend: number; net: number; txnCount: number }
