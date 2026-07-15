@@ -46,3 +46,6 @@ next-env.d.ts
 
 # real bank statements used as parser fixtures — never commit
 test/fixtures/
+
+# scratch/throwaway scripts (may hold ad-hoc secrets) — never commit
+scripts/_*
