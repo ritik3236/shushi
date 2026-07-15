@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
     staleTimes: {
       dynamic: 30,
     },
+    // Statement/payslip uploads run through a Server Action, whose body defaults
+    // to a 1 MB cap — large GPay PDFs get rejected before our own 15 MB check in
+    // actions.ts. Lift it just past that ceiling so the friendly size error is
+    // the effective gate, not this raw framework error.
+    serverActions: {
+      bodySizeLimit: "16mb",
+    },
   },
 };
 
