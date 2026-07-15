@@ -12,6 +12,8 @@ import { requirePageUser } from "@/lib/auth"
 import { formatDate, formatINR } from "@/lib/format"
 import { getAccountSummaries, type AccountSummary } from "@/lib/services/analytics"
 
+import { AccountEditButton } from "./account-dialogs"
+
 export const metadata: Metadata = { title: "Accounts" }
 
 function maskedNumber(account: AccountSummary): string {
@@ -27,7 +29,11 @@ function AccountCard({ account }: { account: AccountSummary }) {
   const surplus = isCard && value !== null && Number(value) < 0
 
   return (
-    <Card size="sm">
+    <Card
+      size="sm"
+      className={account.color ? "border-l-4" : undefined}
+      style={account.color ? { borderLeftColor: `var(--${account.color})` } : undefined}
+    >
       <CardHeader>
         <div className="flex items-center gap-2.5">
           <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
@@ -66,9 +72,12 @@ function AccountCard({ account }: { account: AccountSummary }) {
           {account.transactionCount} transactions
           {account.lastActivity ? ` · last ${formatDate(account.lastActivity)}` : ""}
         </span>
-        <Button asChild variant="ghost" size="sm">
-          <Link href={`/transactions?account=${account.id}`}>View</Link>
-        </Button>
+        <div className="flex items-center gap-1">
+          <AccountEditButton account={account} />
+          <Button asChild variant="ghost" size="sm">
+            <Link href={`/transactions?account=${account.id}`}>View</Link>
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   )

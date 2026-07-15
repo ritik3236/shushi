@@ -27,6 +27,13 @@ export type AccountSummary = {
   bank: string
   type: "SAVINGS" | "CREDIT_CARD"
   accountNumber: string
+  /** chart-1…chart-8 token key, or null. */
+  color: string | null
+  openingBalance: string
+  /** Σcredits − Σdebits for a balance-less savings account (else null). */
+  net: string | null
+  /** True when the balance comes from a statement's running balance. */
+  hasStatementBalance: boolean
   balance: string | null
   due: string | null
   creditLimit: string | null
@@ -103,13 +110,43 @@ export async function getAccountSummaries(userId: string): Promise<AccountSummar
         const meta = latestImport?.statementMeta as Record<string, string> | null
         due = meta?.totalDue ?? null
       }
+
+      // Savings balance: prefer the statement's running balance; if the import
+      // was balance-less (GPay → Union Bank) track it from opening + net once an
+      // opening balance is set. `net` (Σcredits − Σdebits) drives that and the
+      // edit dialog's live "resulting balance" hint.
+      const opening = Number(account.openingBalance)
+      const hasStatementBalance = account.type === "SAVINGS" && latest?.balanceAfter != null
+      let balance: string | null = null
+      let net: string | null = null
+      if (account.type === "SAVINGS") {
+        if (latest?.balanceAfter != null) {
+          balance = latest.balanceAfter.toFixed(2)
+        } else {
+          const sums = await prisma.transaction.groupBy({
+            by: ["direction"],
+            where: { accountId: account.id },
+            _sum: { amount: true },
+          })
+          const credit = Number(sums.find((s) => s.direction === "CREDIT")?._sum.amount ?? 0)
+          const debit = Number(sums.find((s) => s.direction === "DEBIT")?._sum.amount ?? 0)
+          const netNum = credit - debit
+          net = netNum.toFixed(2)
+          if (opening !== 0) balance = (opening + netNum).toFixed(2)
+        }
+      }
+
       return {
         id: account.id,
         name: account.name,
         bank: account.bank,
         type: account.type,
         accountNumber: account.accountNumber,
-        balance: account.type === "SAVINGS" ? (latest?.balanceAfter?.toFixed(2) ?? null) : null,
+        color: account.color,
+        openingBalance: opening.toFixed(2),
+        net,
+        hasStatementBalance,
+        balance,
         due,
         creditLimit: account.creditLimit?.toFixed(2) ?? null,
         lastActivity: latest?.date.toISOString().slice(0, 10) ?? null,

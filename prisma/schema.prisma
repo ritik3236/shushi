@@ -113,6 +113,13 @@ model Account {
   ifsc          String?
   creditLimit   Decimal?    @db.Decimal(14, 2)
   currency      String      @default("INR")
+  /// Categorical token key (chart-1…chart-8) accenting the account — shown as
+  /// the left bar on its transaction rows. Null = no colour assigned.
+  color         String?
+  /// Balance carried in from before the earliest captured transaction. Lets a
+  /// balance-less import (GPay → Union Bank has no running balance) still track
+  /// a balance: balance = openingBalance + Σcredits − Σdebits, once set.
+  openingBalance Decimal    @default(0) @db.Decimal(14, 2)
   createdAt     DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt     DateTime    @updatedAt @db.Timestamptz(3)
 
