@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 import { useTheme } from "next-themes"
-import { Check, Monitor, Palette } from "lucide-react"
+import { Monitor, Palette } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -51,7 +51,6 @@ export function ThemePicker() {
         >
           <Monitor className="size-4 opacity-70" />
           System
-          {isActive("system") ? <Check className="ml-auto size-4" /> : null}
         </button>
 
         {THEME_GROUPS.map((g) => (
@@ -74,7 +73,7 @@ export function ThemePicker() {
                     <span
                       data-theme={t.value}
                       className={cn(
-                        "border-border bg-background ring-offset-background relative flex h-9 w-full items-center justify-center gap-1 rounded-md border transition-all",
+                        "border-border bg-background ring-offset-background flex h-9 w-full items-center justify-center gap-1 rounded-md border transition-all",
                         active
                           ? "ring-primary ring-2 ring-offset-1"
                           : "group-hover/sw:border-foreground/30"
@@ -82,9 +81,6 @@ export function ThemePicker() {
                     >
                       <span className="bg-primary size-3 rounded-full" />
                       <span className="border-border bg-card size-3 rounded-full border" />
-                      {active ? (
-                        <Check className="text-primary absolute inset-0 m-auto size-4" />
-                      ) : null}
                     </span>
                     <span className={cn("text-[11px]", active ? "font-medium" : "text-muted-foreground")}>
                       {t.label}
