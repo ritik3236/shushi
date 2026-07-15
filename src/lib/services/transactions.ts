@@ -41,7 +41,7 @@ export type TransactionRow = {
   direction: "DEBIT" | "CREDIT"
   amount: string
   balanceAfter: string | null
-  account: { id: string; name: string; bank: string; type: "SAVINGS" | "CREDIT_CARD" }
+  account: { id: string; name: string; bank: string; type: "SAVINGS" | "CREDIT_CARD"; color: string | null }
   category: {
     id: string
     name: string
@@ -130,7 +130,7 @@ export async function listTransactions(
       skip: (page - 1) * TRANSACTIONS_PAGE_SIZE,
       take: TRANSACTIONS_PAGE_SIZE,
       include: {
-        account: { select: { id: true, name: true, bank: true, type: true } },
+        account: { select: { id: true, name: true, bank: true, type: true, color: true } },
         category: {
           select: {
             id: true,

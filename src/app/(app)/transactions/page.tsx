@@ -80,7 +80,14 @@ function TxRow({ row, categoryOptions, tagNames, people }: {
   people: { id: string; name: string }[]
 }) {
   return (
-    <div className="group hover:bg-muted/50 odd:bg-muted/[0.18] flex items-center gap-2 px-3 py-1 text-[13px] transition-colors">
+    <div className="group hover:bg-muted/50 odd:bg-muted/[0.18] relative flex items-center gap-2 px-3 py-1 text-[13px] transition-colors">
+      {row.account.color ? (
+        <span
+          title={row.account.name}
+          className="absolute inset-y-0 left-0 w-1"
+          style={{ background: `var(--${row.account.color})` }}
+        />
+      ) : null}
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <span className="min-w-0 truncate font-medium">{primaryName(row)}</span>
         {row.person ? (
