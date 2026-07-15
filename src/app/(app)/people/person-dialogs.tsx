@@ -2,10 +2,11 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, MoreHorizontal, Pencil, Plus, Trash2, UserPlus } from "lucide-react"
+import { MoreHorizontal, Pencil, Plus, Trash2, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Dialog,
   DialogContent,
@@ -180,7 +181,7 @@ function PersonDialog({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={pending}>
-            {pending ? <Loader2 className="animate-spin" /> : null}
+            {pending ? <Spinner /> : null}
             {editing ? "Save" : "Add person"}
           </Button>
         </DialogFooter>
@@ -304,7 +305,7 @@ export function PersonRowActions({
                 })
               }
             >
-              {pending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              {pending ? <Spinner /> : <Trash2 />}
               Delete
             </Button>
           </DialogFooter>

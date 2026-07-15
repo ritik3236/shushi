@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
+
+import { Spinner } from "@/components/ui/spinner"
 
 type TransactionNav = { navigate: (url: string) => void; isPending: boolean }
 
@@ -97,10 +98,7 @@ export function TransactionsPanel({
                 aria-live="polite"
                 className="bg-background/70 animate-in fade-in-0 absolute inset-0 z-10 grid place-items-center duration-150"
               >
-                <Loader2
-                  className="text-muted-foreground size-6 animate-spin motion-reduce:animate-none"
-                  aria-hidden
-                />
+                <Spinner className="text-muted-foreground size-6" />
                 <span className="sr-only">Loading transactions</span>
               </div>
             ) : null}

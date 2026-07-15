@@ -2,12 +2,13 @@
 
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { CircleCheck, FileText, FileUp, Loader2 } from "lucide-react"
+import { CircleCheck, FileText, FileUp } from "lucide-react"
 import { toast } from "sonner"
 
 import { Amount } from "@/components/finance/amount"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Dialog,
   DialogContent,
@@ -403,13 +404,13 @@ export function UploadCard() {
                     </div>
                     {item.status === "analyzing" ? (
                       <p className="text-muted-foreground flex items-center gap-1 text-xs">
-                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                        <Spinner className="size-3" />
                         Analyzing…
                       </p>
                     ) : null}
                     {item.status === "importing" ? (
                       <p className="text-muted-foreground flex items-center gap-1 text-xs">
-                        <Loader2 className="size-3 animate-spin" aria-hidden />
+                        <Spinner className="size-3" />
                         Importing…
                       </p>
                     ) : null}

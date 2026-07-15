@@ -2,10 +2,11 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, Trash2 } from "lucide-react"
+import { Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Dialog,
   DialogContent,
@@ -68,7 +69,7 @@ export function PayslipDeleteButton({
             Cancel
           </Button>
           <Button variant="destructive" size="sm" onClick={confirm} disabled={pending}>
-            {pending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            {pending ? <Spinner /> : <Trash2 />}
             Delete
           </Button>
         </DialogFooter>

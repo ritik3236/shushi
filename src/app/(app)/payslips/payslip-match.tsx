@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Check, Link2, Link2Off, Loader2, Search } from "lucide-react"
+import { Check, Link2, Link2Off, Search } from "lucide-react"
 import { toast } from "sonner"
 
 import { Amount } from "@/components/finance/amount"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Dialog,
   DialogContent,
@@ -57,7 +58,7 @@ export function PayslipMatch({ payslip }: { payslip: PayslipListRow }) {
             })
           }
         >
-          {unlinking ? <Loader2 className="animate-spin" /> : <Link2Off />}
+          {unlinking ? <Spinner /> : <Link2Off />}
         </Button>
       </span>
     )
@@ -154,7 +155,7 @@ function LinkCreditDialog({ payslip }: { payslip: PayslipListRow }) {
         <ScrollArea className="h-72">
           {loading ? (
             <div className="text-muted-foreground flex items-center justify-center gap-2 py-8 text-sm">
-              <Loader2 className="size-4 animate-spin" /> Loading credits…
+              <Spinner /> Loading credits…
             </div>
           ) : credits.length === 0 ? (
             <div className="text-muted-foreground py-8 text-center text-sm">
@@ -185,7 +186,7 @@ function LinkCreditDialog({ payslip }: { payslip: PayslipListRow }) {
                     </div>
                     <Amount value={credit.amount} direction="CREDIT" className="text-sm" />
                     {isLinking ? (
-                      <Loader2 className="size-4 shrink-0 animate-spin" />
+                      <Spinner className="shrink-0" />
                     ) : (
                       <Check className="text-muted-foreground size-4 shrink-0 opacity-0" />
                     )}
