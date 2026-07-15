@@ -22,10 +22,11 @@ import {
   type TransactionFilters,
   type TransactionRow,
 } from "@/lib/services/transactions"
-import { cn } from "@/lib/utils"
 
 import { CategoryCell } from "./category-cell"
 import { FilterRow } from "./filter-row"
+import { PageLink } from "./page-link"
+import { TransactionsPanel } from "./panel"
 import { RowActions } from "./row-actions"
 
 export const metadata: Metadata = { title: "Transactions" }
@@ -204,104 +205,71 @@ export default async function TransactionsPage({
   }
 
   return (
-    <div className="flex h-full justify-center">
-      {/* A raised card panel on the recessed page ground — the list's own surface. */}
-      <div className="bg-card border-border/60 flex h-full w-full max-w-3xl flex-col border-x">
-        {/* Fixed toolbar — part of the chrome, never scrolls. */}
-        <div className="shrink-0 border-b">
-          <div className="px-3 py-2">
-            <FilterRow
-              months={months}
-              accounts={accounts}
-              categories={categoryOptions}
-              tags={tags}
-              people={people}
-            />
-          </div>
+    <TransactionsPanel
+      toolbar={
+        <FilterRow
+          months={months}
+          accounts={accounts}
+          categories={categoryOptions}
+          tags={tags}
+          people={people}
+        />
+      }
+    >
+      {data.rows.length === 0 ? (
+        <div className="p-6">
+          <EmptyState
+            icon={SearchX}
+            title="No matching transactions"
+            hint="Nothing matches the current filters — loosen them or clear everything."
+            action={
+              <Button asChild variant="outline" size="sm">
+                <Link href="/transactions">Clear filters</Link>
+              </Button>
+            }
+          />
         </div>
-
-        {/* The only thing that scrolls: the list. */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-6">
-          {data.rows.length === 0 ? (
-            <div className="p-6">
-              <EmptyState
-                icon={SearchX}
-                title="No matching transactions"
-                hint="Nothing matches the current filters — loosen them or clear everything."
-                action={
-                  <Button asChild variant="outline" size="sm">
-                    <Link href="/transactions">Clear filters</Link>
-                  </Button>
-                }
-              />
-            </div>
-          ) : (
-            <>
-              <div className="divide-border/60 divide-y">
-                {groups.map((group) => (
-                  <section key={group.date}>
-                    <div className="text-muted-foreground bg-muted/30 flex items-center justify-between px-3 py-1.5 text-[11px] font-medium tracking-wide">
-                      <span className="uppercase">{dayHeading(group.date)}</span>
-                      <Amount
-                        value={Math.abs(group.net)}
-                        direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
-                        className="text-[11px] opacity-80"
-                      />
-                    </div>
-                    {group.rows.map((row) => (
-                      <TxRow
-                        key={row.id}
-                        row={row}
-                        categoryOptions={categoryOptions}
-                        tagNames={tagNames}
-                        people={people}
-                      />
-                    ))}
-                  </section>
-                ))}
-              </div>
-              <div className="text-muted-foreground flex items-center justify-between px-3 py-3 text-xs">
-                <span>
-                  {countFormat.format(data.total)} transaction{data.total === 1 ? "" : "s"} · page{" "}
-                  {data.page} of {data.pageCount}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={cn(data.page <= 1 && "pointer-events-none opacity-50")}
-                  >
-                    <Link
-                      href={pageHref(sp, data.page - 1)}
-                      aria-disabled={data.page <= 1}
-                      tabIndex={data.page <= 1 ? -1 : undefined}
-                    >
-                      Prev
-                    </Link>
-                  </Button>
-                  <Button
-                    asChild
-                    variant="outline"
-                    size="sm"
-                    className={cn(data.page >= data.pageCount && "pointer-events-none opacity-50")}
-                  >
-                    <Link
-                      href={pageHref(sp, data.page + 1)}
-                      aria-disabled={data.page >= data.pageCount}
-                      tabIndex={data.page >= data.pageCount ? -1 : undefined}
-                    >
-                      Next
-                    </Link>
-                  </Button>
+      ) : (
+        <>
+          <div className="divide-border/60 divide-y">
+            {groups.map((group) => (
+              <section key={group.date}>
+                <div className="text-muted-foreground bg-muted/30 flex items-center justify-between px-3 py-1.5 text-[11px] font-medium tracking-wide">
+                  <span className="uppercase">{dayHeading(group.date)}</span>
+                  <Amount
+                    value={Math.abs(group.net)}
+                    direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
+                    className="text-[11px] opacity-80"
+                  />
                 </div>
-              </div>
-            </>
-          )}
+                {group.rows.map((row) => (
+                  <TxRow
+                    key={row.id}
+                    row={row}
+                    categoryOptions={categoryOptions}
+                    tagNames={tagNames}
+                    people={people}
+                  />
+                ))}
+              </section>
+            ))}
           </div>
-        </div>
-      </div>
-    </div>
+          <div className="text-muted-foreground flex items-center justify-between px-3 py-3 text-xs">
+            <span>
+              {countFormat.format(data.total)} transaction{data.total === 1 ? "" : "s"} · page{" "}
+              {data.page} of {data.pageCount}
+            </span>
+            <div className="flex items-center gap-2">
+              <PageLink href={pageHref(sp, data.page - 1)} disabled={data.page <= 1}>
+                Prev
+              </PageLink>
+              <PageLink href={pageHref(sp, data.page + 1)} disabled={data.page >= data.pageCount}>
+                Next
+              </PageLink>
+            </div>
+          </div>
+        </>
+      )}
+    </TransactionsPanel>
   )
 }

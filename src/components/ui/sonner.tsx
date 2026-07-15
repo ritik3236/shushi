@@ -4,6 +4,8 @@ import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
+import { themeMode } from "@/design-system/themes"
+
 // The Neon Auth UI provider mounts its OWN bare sonner <Toaster/> (can't be
 // disabled via props), and sonner mirrors every toast into ALL mounted toasters
 // — so toasts showed twice. Ours carries the `toaster` class; this rule hides
@@ -14,7 +16,9 @@ const SUPPRESS_DUPLICATE_TOASTER =
   "ol[data-sonner-toaster]:not(.toaster){display:none !important}"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  // Named palettes (carbon, paper, …) mean nothing to Sonner — collapse the
+  // resolved theme to light/dark so its default styling matches ours.
+  const { resolvedTheme } = useTheme()
 
   return (
     <>
@@ -22,7 +26,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         {SUPPRESS_DUPLICATE_TOASTER}
       </style>
       <Sonner
-        theme={theme as ToasterProps["theme"]}
+        theme={themeMode(resolvedTheme)}
         className="toaster group"
       icons={{
         success: (

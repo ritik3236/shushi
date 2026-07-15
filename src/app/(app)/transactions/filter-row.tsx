@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useSearchParams } from "next/navigation"
 import { Check, Hash, SlidersHorizontal, UserRound, X } from "lucide-react"
 
 import { CategorySelect } from "@/components/finance/category-select"
@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils"
 import type { CategoryOption } from "@/lib/services/categories"
 
 import { DateRangeFilter, type DateRangeValue } from "./date-range-filter"
+import { useTransactionNav } from "./panel"
 import { TagFilter } from "./tag-filter"
 
 /** Every URL key that counts toward the "active filters" badge. */
@@ -64,9 +65,9 @@ export function FilterRow({
   tags: { tag: string; count: number }[]
   people: { id: string; name: string }[]
 }) {
-  const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { navigate } = useTransactionNav()
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   const q = searchParams.get("q") ?? ""
@@ -95,9 +96,9 @@ export function FilterRow({
       }
       params.delete("page")
       const qs = params.toString()
-      router.replace(qs ? `${pathname}?${qs}` : pathname)
+      navigate(qs ? `${pathname}?${qs}` : pathname)
     },
-    [pathname, router, searchParams]
+    [navigate, pathname, searchParams]
   )
 
   function handleSearch(value: string) {
@@ -112,7 +113,7 @@ export function FilterRow({
     if (searchTimer.current) clearTimeout(searchTimer.current)
     setSearch("")
     setDrawerOpen(false)
-    router.replace(pathname)
+    navigate(pathname)
   }
 
   const dateActive = Boolean(searchParams.get("from") || searchParams.get("to"))

@@ -7,6 +7,7 @@ import { UserButton } from "@neondatabase/auth-ui"
 import { AnimatedNavIcon } from "@/components/layout/animated-nav-icon"
 import { BottomNav } from "@/components/layout/bottom-nav"
 import { NAV_ITEMS } from "@/components/layout/nav"
+import { ThemePicker } from "@/components/theme-picker"
 import { ShushiLogo } from "@/components/brand/shushi-logo"
 import { APP_NAME } from "@/lib/constants"
 import { cn } from "@/lib/utils"
@@ -59,6 +60,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="border-sidebar-border flex items-center gap-2 border-t p-3">
           <UserButton size="icon" />
+          <div className="ml-auto">
+            <ThemePicker />
+          </div>
         </div>
       </aside>
 
@@ -66,7 +70,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Mobile topbar — brand + account; navigation lives in the bottom bar. */}
         <header className="bg-background/90 sticky top-0 z-30 flex h-14 shrink-0 items-center border-b px-3 backdrop-blur lg:hidden">
           <Brand />
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <ThemePicker />
             <UserButton size="icon" />
           </div>
         </header>
