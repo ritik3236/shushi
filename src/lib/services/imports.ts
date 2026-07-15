@@ -38,7 +38,8 @@ type PayloadRow = {
   counterparty?: string
   categoryId: string | null
   excludeFromSpend: boolean
-  duplicate: boolean
+  /** null = new; "content" = same hash (unforceable); "ref" = same UPI ref. */
+  duplicateReason: "content" | "ref" | null
 }
 
 type StatementPayload = {
@@ -62,6 +63,9 @@ export type PreviewRow = {
   amount: string
   direction: "DEBIT" | "CREDIT"
   duplicate: boolean
+  /** Why it's a duplicate — a "ref" dup can be force-imported; "content" can't. */
+  duplicateReason: "content" | "ref" | null
+  refNo: string | null
   categoryName: string | null
 }
 
@@ -198,6 +202,28 @@ export async function previewStatementFile(input: {
   return previewStatement({ userId, fileName, fileHash, buffer, parsed, duplicateFile })
 }
 
+/**
+ * Which of `refs` already exist on this account. A UPI/IMPS reference is the
+ * one stable, source-independent identity a transaction has — the SAME across a
+ * GPay statement, a bank statement, and a manual entry, even when their
+ * narration text differs. So a ref that already exists on the account marks a
+ * re-arriving duplicate the content-hash `dedupeKey` can't catch. Deliberately
+ * account-scoped: the same ref in a DIFFERENT account is the opposite leg of a
+ * self-transfer (transfer detection links those), never a duplicate.
+ */
+async function existingRefNos(
+  accountId: string,
+  refs: (string | undefined)[]
+): Promise<Set<string>> {
+  const list = refs.filter((r): r is string => Boolean(r))
+  if (!list.length) return new Set()
+  const rows = await prisma.transaction.findMany({
+    where: { accountId, refNo: { in: list } },
+    select: { refNo: true },
+  })
+  return new Set(rows.map((r) => r.refNo as string))
+}
+
 async function previewStatement(input: {
   userId: string
   fileName: string
@@ -251,22 +277,36 @@ async function previewStatement(input: {
       counterparty: info.counterparty,
       categoryId,
       excludeFromSpend: isCcPayment,
-      duplicate: false,
+      duplicateReason: null,
     }
   })
 
-  // Mark rows that already exist in this account (overlapping statements).
+  // Mark rows already present in this account. Two independent signals: same
+  // content hash (a re-import of the same statement) OR same UPI/IMPS ref (the
+  // same payment re-arriving from a different source — manual entry, or a bank
+  // statement vs a GPay statement — whose narration differs so the hash misses
+  // it). Ref match is account-scoped (see existingRefNos).
   if (account && enriched.length) {
-    const existing = await prisma.transaction.findMany({
-      where: {
-        accountId: account.id,
-        dedupeKey: { in: enriched.map((row) => row.dedupeKey) },
-      },
-      select: { dedupeKey: true },
-    })
-    const existingKeys = new Set(existing.map((row) => row.dedupeKey))
+    const [byKey, existingRefs] = await Promise.all([
+      prisma.transaction.findMany({
+        where: {
+          accountId: account.id,
+          dedupeKey: { in: enriched.map((row) => row.dedupeKey) },
+        },
+        select: { dedupeKey: true },
+      }),
+      existingRefNos(
+        account.id,
+        enriched.map((row) => row.refNo)
+      ),
+    ])
+    const existingKeys = new Set(byKey.map((row) => row.dedupeKey))
     for (const row of enriched) {
-      row.duplicate = existingKeys.has(row.dedupeKey)
+      row.duplicateReason = existingKeys.has(row.dedupeKey)
+        ? "content"
+        : !!row.refNo && existingRefs.has(row.refNo)
+          ? "ref"
+          : null
     }
   }
 
@@ -293,8 +333,10 @@ async function previewStatement(input: {
     },
   })
 
-  const duplicates = enriched.filter((row) => row.duplicate).length
-  const autoCategorized = enriched.filter((row) => row.categoryId && !row.duplicate).length
+  const duplicates = enriched.filter((row) => row.duplicateReason !== null).length
+  const autoCategorized = enriched.filter(
+    (row) => row.categoryId && row.duplicateReason === null
+  ).length
 
   return {
     importId: statementImport.id,
@@ -324,14 +366,20 @@ async function previewStatement(input: {
       counterparty: row.counterparty ?? null,
       amount: row.amount,
       direction: row.direction,
-      duplicate: row.duplicate,
+      duplicate: row.duplicateReason !== null,
+      duplicateReason: row.duplicateReason,
+      refNo: row.refNo ?? null,
       categoryName: row.categoryId ? (categoryNameById.get(row.categoryId) ?? null) : null,
     })),
     payslip: null,
   }
 }
 
-export async function commitImport(userId: string, importId: string): Promise<CommitResult> {
+export async function commitImport(
+  userId: string,
+  importId: string,
+  forceRefNos: string[] = []
+): Promise<CommitResult> {
   const statementImport = await prisma.statementImport.findFirst({
     where: { id: importId, userId },
   })
@@ -392,8 +440,24 @@ export async function commitImport(userId: string, importId: string): Promise<Co
     },
   })
 
+  // Skip rows whose UPI/IMPS ref already exists on this account — the same
+  // payment re-arriving from another source, which the @@unique(accountId,
+  // dedupeKey) constraint alone wouldn't catch when the narration differs.
+  // Account-scoped, so a transfer's other leg (same ref, different account)
+  // still imports. Ref-less rows (interest, fees, cash) fall through to the
+  // content-hash constraint below.
+  const existingRefs = await existingRefNos(
+    account.id,
+    payload.rows.map((row) => row.refNo)
+  )
+  // Rows the user ticked "import anyway" survive the ref filter.
+  const forced = new Set(forceRefNos)
+  const rowsToInsert = payload.rows.filter(
+    (row) => !row.refNo || !existingRefs.has(row.refNo) || forced.has(row.refNo)
+  )
+
   const result = await prisma.transaction.createMany({
-    data: payload.rows.map((row) => ({
+    data: rowsToInsert.map((row) => ({
       userId,
       accountId: account.id,
       importId,

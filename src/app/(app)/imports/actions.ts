@@ -45,11 +45,12 @@ export async function uploadStatementAction(
 }
 
 export async function commitImportAction(
-  importId: string
+  importId: string,
+  forceRefNos: string[] = []
 ): Promise<ActionResult<CommitResult>> {
   try {
     const user = await requireUser()
-    const result = await commitImport(user.id, importId)
+    const result = await commitImport(user.id, importId, forceRefNos)
     revalidatePath("/", "layout")
     return { ok: true, data: result }
   } catch (error) {

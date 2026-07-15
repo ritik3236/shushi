@@ -49,6 +49,8 @@ type QueueItem = {
   result: CommitResult | null
   error: string | null
   password: string
+  /** refNos the user chose to import despite an existing same-ref row. */
+  forceRefNos: string[]
 }
 
 function plural(n: number, singular: string, pluralWord = `${singular}s`): string {
@@ -117,8 +119,17 @@ function BreakdownColumn({
   )
 }
 
-function ReviewDialog({ preview }: { preview: ImportPreview }) {
+function ReviewDialog({
+  preview,
+  forceRefNos,
+  onToggleForce,
+}: {
+  preview: ImportPreview
+  forceRefNos: string[]
+  onToggleForce: (refNo: string) => void
+}) {
   const slip = preview.payslip
+  const forced = new Set(forceRefNos)
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -174,31 +185,56 @@ function ReviewDialog({ preview }: { preview: ImportPreview }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {preview.rows.map((row, index) => (
-                  <TableRow key={index} className={row.duplicate ? "opacity-50" : undefined}>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {formatDayMonth(row.date)}
-                    </TableCell>
-                    <TableCell>
-                      <span className="flex max-w-56 items-center gap-1.5">
-                        <span className="min-w-0 truncate text-xs">
-                          {row.counterparty ?? row.narration}
+                {preview.rows.map((row, index) => {
+                  const ref = row.refNo
+                  const isForced = Boolean(ref && forced.has(ref))
+                  const dimmed = row.duplicate && !isForced
+                  return (
+                    <TableRow key={index} className={dimmed ? "opacity-50" : undefined}>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {formatDayMonth(row.date)}
+                      </TableCell>
+                      <TableCell>
+                        <span className="flex max-w-64 items-center gap-1.5">
+                          <span className="min-w-0 truncate text-xs">
+                            {row.counterparty ?? row.narration}
+                          </span>
+                          {row.duplicateReason === "content" ? (
+                            <Badge
+                              variant="secondary"
+                              className="shrink-0 px-1.5 text-[10px] font-normal"
+                            >
+                              dup
+                            </Badge>
+                          ) : row.duplicateReason === "ref" && ref ? (
+                            <span className="flex shrink-0 items-center gap-1">
+                              <Badge
+                                variant="secondary"
+                                className="px-1.5 text-[10px] font-normal"
+                                title="Already imported — same UPI ref"
+                              >
+                                same UPI ref
+                              </Badge>
+                              <button
+                                type="button"
+                                onClick={() => onToggleForce(ref)}
+                                className="text-primary text-[10px] whitespace-nowrap underline underline-offset-2"
+                              >
+                                {isForced ? "will import" : "import anyway"}
+                              </button>
+                            </span>
+                          ) : null}
                         </span>
-                        {row.duplicate ? (
-                          <Badge variant="secondary" className="px-1.5 text-[10px] font-normal">
-                            dup
-                          </Badge>
-                        ) : null}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground max-w-40 text-xs">
-                      <span className="block truncate">{row.categoryName ?? "—"}</span>
-                    </TableCell>
-                    <TableCell className="text-right text-xs">
-                      <Amount value={row.amount} direction={row.direction} />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground max-w-40 text-xs">
+                        <span className="block truncate">{row.categoryName ?? "—"}</span>
+                      </TableCell>
+                      <TableCell className="text-right text-xs">
+                        <Amount value={row.amount} direction={row.direction} />
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </ScrollArea>
@@ -257,6 +293,7 @@ export function UploadCard() {
         result: null,
         error: null,
         password: "",
+        forceRefNos: [],
       }
     })
     setItems((prev) => [...prev, ...fresh])
@@ -267,10 +304,11 @@ export function UploadCard() {
   async function commitItem(
     id: string,
     preview: ImportPreview,
+    forceRefNos: string[],
     opts?: { silent?: boolean }
   ): Promise<CommitResult | null> {
     update(id, { status: "importing" })
-    const res = await commitImportAction(preview.importId)
+    const res = await commitImportAction(preview.importId, forceRefNos)
     if (!res.ok) {
       update(id, { status: "ready" })
       toast.error(res.error)
@@ -297,7 +335,7 @@ export function UploadCard() {
     let okFiles = 0
     let imported = 0
     for (const item of ready) {
-      const result = await commitItem(item.id, item.preview, { silent: true })
+      const result = await commitItem(item.id, item.preview, item.forceRefNos, { silent: true })
       if (result) {
         okFiles += 1
         imported += result.imported
@@ -431,13 +469,23 @@ export function UploadCard() {
                 <div className="flex shrink-0 items-center gap-1.5">
                   {item.status === "ready" && preview ? (
                     <>
-                      <ReviewDialog preview={preview} />
+                      <ReviewDialog
+                        preview={preview}
+                        forceRefNos={item.forceRefNos}
+                        onToggleForce={(refNo) =>
+                          update(item.id, {
+                            forceRefNos: item.forceRefNos.includes(refNo)
+                              ? item.forceRefNos.filter((r) => r !== refNo)
+                              : [...item.forceRefNos, refNo],
+                          })
+                        }
+                      />
                       <Button
                         size="sm"
                         disabled={bulk !== null}
-                        onClick={() => void commitItem(item.id, preview)}
+                        onClick={() => void commitItem(item.id, preview, item.forceRefNos)}
                       >
-                        Import
+                        Import {preview.totals.new + item.forceRefNos.length}
                       </Button>
                       <Button
                         variant="ghost"
