@@ -188,17 +188,23 @@ export function RowActions({
           <DropdownMenuItem onSelect={() => setRuleOpen(true)}>
             Always categorize like this…
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() =>
-              runMenuAction(
-                () => setExcludedAction(row.id, !row.excludeFromSpend),
-                row.excludeFromSpend ? "Included in spend" : "Excluded from spend"
-              )
-            }
-          >
-            {row.excludeFromSpend ? "Include in spend" : "Exclude from spend"}
-          </DropdownMenuItem>
+          {/* Khata (person-assigned) and transfer-kind rows are already out of
+              spend, so the toggle would be a no-op — only show it where it acts. */}
+          {(row.person === null && row.category?.kind !== "TRANSFER") || transferGroupId ? (
+            <DropdownMenuSeparator />
+          ) : null}
+          {row.person === null && row.category?.kind !== "TRANSFER" ? (
+            <DropdownMenuItem
+              onSelect={() =>
+                runMenuAction(
+                  () => setExcludedAction(row.id, !row.excludeFromSpend),
+                  row.excludeFromSpend ? "Included in spend" : "Excluded from spend"
+                )
+              }
+            >
+              {row.excludeFromSpend ? "Include in spend" : "Exclude from spend"}
+            </DropdownMenuItem>
+          ) : null}
           {transferGroupId ? (
             <DropdownMenuItem
               onSelect={() =>

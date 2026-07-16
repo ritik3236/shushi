@@ -181,15 +181,24 @@ export default async function TransactionsPage({
     const year = iso.slice(0, 4)
     return `${weekday}, ${formatDayMonth(iso)}${year !== currentYear ? ` ${year}` : ""}`
   }
-  const groups: { date: string; rows: TransactionRow[]; net: number }[] = []
+  // The day total mirrors the dashboard's spend/income net: transfers, khata
+  // (person-assigned), and excludeFromSpend rows don't count — else a day of only
+  // self-transfers shows a bogus net. `counted` gates the chip so a day with no
+  // spend/income rows shows none.
+  const countsForNet = (row: TransactionRow): boolean =>
+    !row.excludeFromSpend && row.person === null && row.category?.kind !== "TRANSFER"
+  const groups: { date: string; rows: TransactionRow[]; net: number; counted: number }[] = []
   for (const row of data.rows) {
     let group = groups[groups.length - 1]
     if (!group || group.date !== row.date) {
-      group = { date: row.date, rows: [], net: 0 }
+      group = { date: row.date, rows: [], net: 0, counted: 0 }
       groups.push(group)
     }
     group.rows.push(row)
-    group.net += row.direction === "CREDIT" ? Number(row.amount) : -Number(row.amount)
+    if (countsForNet(row)) {
+      group.net += row.direction === "CREDIT" ? Number(row.amount) : -Number(row.amount)
+      group.counted += 1
+    }
   }
 
   const noDataAtAll = data.total === 0 && !filtersActive
@@ -243,11 +252,13 @@ export default async function TransactionsPage({
               <section key={group.date}>
                 <div className="text-muted-foreground bg-muted/30 flex items-center justify-between px-3 py-1.5 text-[11px] font-medium tracking-wide">
                   <span className="uppercase">{dayHeading(group.date)}</span>
-                  <Amount
-                    value={Math.abs(group.net)}
-                    direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
-                    className="text-[11px] opacity-80"
-                  />
+                  {group.counted > 0 ? (
+                    <Amount
+                      value={Math.abs(group.net)}
+                      direction={group.net >= 0 ? "CREDIT" : "DEBIT"}
+                      className="text-[11px] opacity-80"
+                    />
+                  ) : null}
                 </div>
                 {group.rows.map((row) => (
                   <TxRow
